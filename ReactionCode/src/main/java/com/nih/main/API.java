@@ -81,7 +81,7 @@ public class API {
 			encoder.setHybridization(hybridization);
 			encoder.setRepetition(repetition);
 			encoder.setStereochemistry(stereochemistry);
-			Map<String,String> reactionCodeMap = encoder.makeReactionCode(reactionCenterAtom, reactants, 
+			Map<String,String> reactionCodeMap = encoder.generateReactionCode(reactionCenterAtom, reactants, 
 					pseudoMolecule, numberOfRepetitions);
 			//String reactionCode = ReactionCode.reactionCodeMapToStringMultiLines(reactionCodeMap);
 			reactionCode = encoder.reactionCodeMapToStringOneLine(reactionCodeMap);

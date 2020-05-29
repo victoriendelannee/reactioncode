@@ -360,8 +360,7 @@ public class DecodeReactionCode {
 					double bondRepetition = ((double) bond.getBegin().getProperty("repetition") > (double) bond.getEnd().getProperty("repetition"))
 							? bond.getBegin().getProperty("repetition") : bond.getEnd().getProperty("repetition");
 					bond.setProperty("repetition", bondRepetition);
-//					System.out.println(bond);
-//					System.out.println(bond.getProperties());
+					
 					pseudoMolecule.addBond(bond);
 					cpt++;
 				}
@@ -534,12 +533,11 @@ public class DecodeReactionCode {
 				}
 			}
 		}
-
 		for (IBond b : madeBondtoAdd) {
 			aggregateProducts.addBond(b);
-			System.out.println(b);
 		}
 
+		//clone and add reaction center in crresponding lists
 		aggregateProducts = aggregateProducts.clone();
 		for (IBond bond : aggregateProducts.bonds()) {
 			if (bond.getProperty(BOND_CHANGE_INFORMATION) != null) {

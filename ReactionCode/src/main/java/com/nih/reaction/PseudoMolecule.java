@@ -44,7 +44,7 @@ import org.openscience.cdk.stereo.Octahedral;
 import org.openscience.cdk.stereo.SquarePlanar;
 import org.openscience.cdk.stereo.TetrahedralChirality;
 import org.openscience.cdk.stereo.TrigonalBipyramidal;
-import org.openscience.smsd.tools.ExtAtomContainerManipulator;
+//import org.openscience.smsd.tools.ExtAtomContainerManipulator;
 
 import com.nih.writer.MDLV2000Writer;
 
@@ -139,6 +139,10 @@ public class PseudoMolecule {
 		return cleanMolecule(pseudoMolecule);
 	}
 
+	/**
+	 * @param atom
+	 * @param leaving
+	 */
 	private void addAtomInPseudoMolecule(IAtom atom, int leaving) {
 		if (!atomsInPseudoMol.contains(atom.getID())) {
 			pseudoMolecule.addAtom(atom);
@@ -158,6 +162,10 @@ public class PseudoMolecule {
 		}
 	}
 
+	/**
+	 * @param bond
+	 * @param leaving
+	 */
 	private void addBondInPseudoMolecule(IBond bond, int leaving) {
 		if (!bondsInPseudoMol.contains(bond.getID())) {
 			bondsInPseudoMol.add(bond.getID());
@@ -201,6 +209,10 @@ public class PseudoMolecule {
 
 	}
 
+	/**
+	 * @param bond
+	 * @return
+	 */
 	private IBond formatBond(IBond bond) {
 		IBond newBond = new Bond();
 		newBond.setAtom(indexAtomsPseudoMolUnique.get(bond.getAtom(0).getID()).iterator().next(), 0);
@@ -217,6 +229,9 @@ public class PseudoMolecule {
 		return newBond;
 	}
 
+	/**
+	 * @return
+	 */
 	public HashMap<String, Integer> atomRepetition() {
 		HashMap<String, Integer> numberOfRepetitions = new HashMap<String, Integer>();
 		for (Entry<String, LinkedHashSet<IAtom>> set : indexAtomsPseudoMol.entrySet()) {
@@ -226,6 +241,11 @@ public class PseudoMolecule {
 		return numberOfRepetitions;
 	}
 
+	/**
+	 * @param mol
+	 * @return
+	 * @throws CDKException
+	 */
 	private IAtomContainer cleanMolecule(IAtomContainer mol) throws CDKException {
 		//use StructureDiagramGenerator2 because StructureDiagramGenerator modify the stereo and can remove it
 		StructureDiagramGenerator2 sdg = new StructureDiagramGenerator2();
@@ -245,6 +265,10 @@ public class PseudoMolecule {
 		return sg.create(newPseudoMolecule);
 	}
 
+	/**
+	 * @param reaction
+	 * @throws CDKException
+	 */
 	public void reactionAnnotator(IReaction reaction) throws CDKException {
 		//idofTheAtom:indexOfTheAtom
 		Map<Integer,Integer> indexAtomsInReactants = new HashMap<Integer,Integer>();
@@ -364,8 +388,6 @@ public class PseudoMolecule {
 							
 						}
 						if (isCleaved) {
-//							System.out.println("cleaved " + rB.getBegin().getSymbol() + rB.getBegin().getID() + " " +
-//									rB.getEnd().getSymbol() + rB.getEnd().getID() );
 							rB.setProperty(BOND_CHANGE_INFORMATION, additionalConstants.BOND_CLEAVED);
 							rB.getBegin().setProperty(additionalConstants.REACTION_CENTER, true);
 							rB.getEnd().setProperty(additionalConstants.REACTION_CENTER, true);
@@ -472,31 +494,14 @@ public class PseudoMolecule {
 			}
 		}
 	}
-
-		
-//	/**
-//	 * Return bond order change between the reactant and the product
-//	 * @param r
-//	 * @param p
-//	 * @return
-//	 */
-//	private int getBondOderChangeProperty(IBond.Order r, IBond.Order p) {
-//		if (r.equals(IBond.Order.SINGLE) && p.equals(IBond.Order.DOUBLE)) 
-//				return additionalConstants.SINGLE_TO_DOUBLE;
-//		else if (r.equals(IBond.Order.SINGLE) && p.equals(IBond.Order.TRIPLE)) 
-//			return additionalConstants.SINGLE_TO_TRIPLE;
-//		else if (r.equals(IBond.Order.DOUBLE) && p.equals(IBond.Order.SINGLE)) 
-//			return additionalConstants.DOUBLE_TO_SINGLE;
-//		else if (r.equals(IBond.Order.DOUBLE) && p.equals(IBond.Order.TRIPLE)) 
-//			return additionalConstants.DOUBLE_TO_TRIPLE;
-//		else if (r.equals(IBond.Order.TRIPLE) && p.equals(IBond.Order.DOUBLE)) 
-//			return additionalConstants.TRIPLE_TO_DOUBLE;
-//		else
-//			return -1;
-//	}
 	
-	//LEFT == OPPOSITE == ANTI_CLOCKWISE == 1
-	//RIGHT == TOGETHER == CLOCKWISE == 2
+	
+	/**
+	 * LEFT == OPPOSITE == ANTI_CLOCKWISE == 1
+	 * RIGHT == TOGETHER == CLOCKWISE == 2
+	 * @param se
+	 * @param a
+	 */
 	private void configStereoProperties(IStereoElement se, IAtom a) {
 		String symbol = null;
 		String type = null;
@@ -625,6 +630,10 @@ public class PseudoMolecule {
 	}
 	
 	
+	/**
+	 * @param bond
+	 * @return
+	 */
 	private int encodeOrder(IBond bond) {
 		if (bond.isAromatic()) {
 			return 9;
@@ -650,6 +659,11 @@ public class PseudoMolecule {
 	}
 	
 
+	/**
+	 * @param r
+	 * @param p
+	 * @return
+	 */
 	private int getBondStereoChangeProperty(IBond.Stereo r, IBond.Stereo p) {
 		if (r == null && p != null) {
 			if (p.equals(IBond.Stereo.UP)) 
@@ -729,6 +743,7 @@ public class PseudoMolecule {
 	 * ex: 2A + 1B -> 2AB  The molecule A is to time in the product and has to be considered as the same molecule repeated 2 times
 	 * (cf SI figure Stoichiometry management in publication)
 	 * @param atom
+	 * @return
 	 */
 	private IAtomContainer buildIndexInPseudoMolecule(IAtomContainerSet set) {
 		IAtomContainer aggregate = DefaultChemObjectBuilder.getInstance().newAtomContainer();
@@ -752,8 +767,10 @@ public class PseudoMolecule {
 		return aggregate;
 	}
 	
+
 	/**
 	 * Remove smartly duplicate atoms. A BFS is looking for neighbors in order to keep a whole fragment
+	 * @param ac
 	 */
 	private void duplicateAtomManagement(IAtomContainer ac) {
 		for (Entry<String,LinkedHashSet<IAtom>> e : indexAtomsPseudoMol.entrySet()) {
@@ -775,6 +792,13 @@ public class PseudoMolecule {
 		}
 	}
 	
+	/**
+	 * @param sphere
+	 * @param atomContainer
+	 * @param atomList
+	 * @param visited
+	 * @return
+	 */
 	private List<IAtom> getAllConnectedDuplicateAtoms(Set<IAtom> sphere, IAtomContainer atomContainer, 
 			List<IAtom> atomList, Set<IAtom> visited) {
 		IAtom nextAtom;
@@ -815,6 +839,13 @@ public class PseudoMolecule {
 		}
 	}
 
+	/**
+	 * @param parentPath
+	 * @param name
+	 * @throws IOException
+	 * @throws CDKException
+	 * @throws CloneNotSupportedException
+	 */
 	public void writePseudoMoleculeImage(String parentPath, String name) throws IOException, CDKException, CloneNotSupportedException {
 		new org.openscience.cdk.depict.DepictionGenerator().withHighlight(getBondOrderList(), Color.GREEN)
 		.withHighlight(getBondFormedList(), Color.BLUE)

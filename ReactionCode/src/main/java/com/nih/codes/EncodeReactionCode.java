@@ -73,7 +73,7 @@ public class EncodeReactionCode {
 	 * @param numberOfRepetitions the number of time each atom is duplicate ex: c1(c2ccc(Br)cc2)ccc(Br)cc1.CC1=CC(=CC=C1)NC2=CC=CC=C2>>N(c1ccc(c2ccc(N(c3cccc(C)c3)c3ccccc3)cc2)cc1)(c1cccc(C)c1)c1ccccc1
 	 * @return
 	 */
-	public Map<String,String> makeReactionCode(Set<IAtom> atomInRC, IAtomContainerSet reactants,
+	public Map<String,String> generateReactionCode(Set<IAtom> atomInRC, IAtomContainerSet reactants,
 			IAtomContainer pseudoMolecule, Map<String, Integer> numberOfRepetitions) {
 
 		mol = pseudoMolecule;
@@ -81,9 +81,6 @@ public class EncodeReactionCode {
 		
 		//make table of correspondence to connect atom for reaction code generation
 		connectionTableAlphabet = makeConnectionTableAlphabet();
-		
-		//map containing codes of each layer
-		Map<String,String> reactionCodeMap = new HashMap<String,String>();
 		
 		//generate index
 		Map<String, IAtom> indexAtomReactants = indexAtomIAtomContainerSet(reactants);
@@ -96,57 +93,18 @@ public class EncodeReactionCode {
 		generateAllAtomAndBondCodes(atomInRC, indexAtomReactants, indexBondReactants, pseudoMolecule, codeLayers, 
 				new ArrayList<IAtom>(), 1, pseudoMolecule.getAtomCount());
 		
-		//find the roots (atom(s) with the highest score in the RC)
-		List<IAtom> sortedAtomInRC = new ArrayList<IAtom>(atomInRC);
-		Collections.sort(sortedAtomInRC, new CompareByAtomCode());
-		List<IAtom> roots = getRootAtoms(sortedAtomInRC);
-		
-		//generate reactionCode for all potential roots and keep the one with the highest priority 
-		//cf publication SI conflict solver algorithm
-		/*for (IAtom root : roots) {
-			System.out.println("code "+root.getProperties());
-			//reset Properties define to rank atoms
-			resetRankingProperties();
-			List<IAtom> sphere = new ArrayList<IAtom>();
-//			List<IAtom> visited = new ArrayList<IAtom>();
-//			for (Entry<Integer, Set<IAtom>> e : sphereList.entrySet()) {
-//				if (e.getKey() != 0) {
-//					visited.addAll(e.getValue());
-//				}
-//			}
-			sphere.add(root);
-			rankedAtomsInReactionCentre(new HashSet<IAtom>(sphere), new ArrayList<IAtom>(), 
-					new ArrayList<IAtom>(codeLayers.get(0)), 0, mol.getAtomCount());
-
-			sphere = new ArrayList<IAtom>();
-			sphere.addAll(codeLayers.get(0));
-			
-			rankedAtomsOutsideReactionCentre(new HashSet<IAtom>(sphere), new ArrayList<IAtom>(), 0, 
-					mol.getAtomCount()-sphere.size());
-			//System.out.println(sphereList.keySet());
-			Map<String,String> result = generate(codeLayers, numberOfRepetitions);
-			String newReactionCode = reactionCodeMapToStringOneLine(result);
-//			System.out.println("newMCode " +newMCode);
-			if (reactionCode == null) {
-				reactionCode = newReactionCode;
-				reactionCodeMap = result;
-			}
-			else {
-				if (newReactionCode.compareTo(reactionCode) < 0) {
-					reactionCode = newReactionCode;
-					reactionCodeMap = result;
-				}
-			}
-		}*/
-		return selectReactionCode(pseudoMolecule, codeLayers, numberOfRepetitions);
-		//return reactionCodeMap;
+		return generate(pseudoMolecule, codeLayers, numberOfRepetitions);
 	}
 
 
+
 	/**
+	 * @param pseudoMol
 	 * @param codeLayers
+	 * @param numberOfRepetitions
+	 * @return
 	 */
-	private Map<String,String> selectReactionCode(IAtomContainer pseudoMol, Map<Integer, Set<IAtom>> codeLayers,
+	private Map<String,String> generate(IAtomContainer pseudoMol, Map<Integer, Set<IAtom>> codeLayers,
 			Map<String, Integer> numberOfRepetitions) {
 		int position = 1;
 		for (Entry<Integer, Set<IAtom>> e : codeLayers.entrySet()) {
@@ -159,7 +117,6 @@ public class EncodeReactionCode {
 			for (int i = 0; i < sortedAtomsByAtomCode.size(); i++) {
 				conflictedAtoms = new ArrayList<IAtom>();
 				IAtom atom1 = sortedAtomsByAtomCode.get(i);
-				System.out.println(atom1.getProperty("code2") + " " + atom1.getProperty("position") + " " + position);
 				if (atom1.getProperty("position") != null)
 					continue;
 				conflictedAtoms.add(atom1);
@@ -173,18 +130,24 @@ public class EncodeReactionCode {
 						break;
 				}
 				int nbOfConflicts = conflictedAtoms.size();
-				System.out.println("depth "+ depth + " / " + codeLayers.size() + " " + i + " " + sortedAtomsByAtomCode.size() + " nb conf " + conflictedAtoms.size() + " pos " + position);
 				conflictSolver(pseudoMol, depth, position);
 				position += nbOfConflicts;
 			}
 		}
-		return generate2(codeLayers, numberOfRepetitions);
+		return finish(codeLayers, numberOfRepetitions);
 	}
 	
+	/**
+	 * Solve conflicts between atom sharing the same atom code
+	 * @param pseudoMol
+	 * @param depth
+	 * @param position
+	 * @return
+	 */
 	private boolean conflictSolver(IAtomContainer pseudoMol, int depth, int position) {
 		int size = conflictedAtoms.size();
 		if (size > 1) {
-			System.out.println(" PREVIOUS ");
+			//System.out.println(" PREVIOUS ");
 			if (depth != 0) {
 				//use previous layer
 				if (previousLayerSolver(position))
@@ -200,22 +163,22 @@ public class EncodeReactionCode {
 					a.setProperty("position", tempPos);
 				}
 			}
-			System.out.println(" BONDS ");
+			//System.out.println(" BONDS ");
 			if (connectedBondsSolver())
 				return true;
 			else
 				removeSolvedConflictedAtom();
-			System.out.println(" CURRENT ");
+			//System.out.println(" CURRENT ");
 			if (currentLayerSolver(position, pseudoMol))
 				return true;
 			else
 				removeSolvedConflictedAtom();
-			System.out.println(" NEXT ");
+			//System.out.println(" NEXT ");
 			if (nextLayersSolver(pseudoMol))
 				return true;
 			//Symmetry, it does not matter. The order will not change the position. A position is attributed
 			else {
-				System.out.println(" SYMMETRY ");
+				//System.out.println(" SYMMETRY ");
 				removeSolvedConflictedAtom();
 				forceSolvedConflictedAtom();
 			}
@@ -227,6 +190,9 @@ public class EncodeReactionCode {
 		return false;
 	}
 	
+	/**
+	 * 
+	 */
 	private void forceSolvedConflictedAtom() {
 		List<IAtom> temp = new ArrayList<IAtom>();
 		Collections.sort(conflictedAtoms, new CompareByPosition());
@@ -247,7 +213,6 @@ public class EncodeReactionCode {
 					for (int i = size-1; i > -1; i--) {
 						IAtom tatom = temp.get(i);
 						int newPosition = (int) tatom.getProperty("position") - (size - i - 1);
-						System.out.println(" new pos " + newPosition + " old " + tatom.getProperty("position"));
 						tatom.setProperty("hasUniquePosition",true);
 						tatom.setProperty("position",newPosition);
 					}
@@ -261,6 +226,7 @@ public class EncodeReactionCode {
 		}
 		conflictedAtoms.clear();
 	}
+	
 	/**
 	 * Attribute a unique position
 	 */
@@ -274,6 +240,10 @@ public class EncodeReactionCode {
 		conflictedAtoms = newConflictedAtoms;
 	}
 	
+	/**
+	 * @param position
+	 * @return
+	 */
 	private boolean previousLayerSolver(int position) {
 		boolean success = true;
 		//sorted connection in previous layers
@@ -345,6 +315,11 @@ public class EncodeReactionCode {
 		return success;
 	}
 
+	/**
+	 * @param position
+	 * @param pseudoMol
+	 * @return
+	 */
 	private boolean currentLayerSolver(int position, IAtomContainer pseudoMol) {
 		boolean success = true;
 		//sorted connection in previous layers
@@ -381,7 +356,7 @@ public class EncodeReactionCode {
 					Collections.sort(priorities2);
 					atom2.setProperty("priorities",priorities2);
 				}
-				System.out.println(priorities1 + " " + priorities2);
+
 				//assign a priority based on priorities lists
 				//connected to the same atoms in the previous layer
 				if (priorities1.equals(priorities2)) {
@@ -421,6 +396,9 @@ public class EncodeReactionCode {
 		return success;
 	}
 	
+	/**
+	 * @return
+	 */
 	private boolean connectedBondsSolver() {
 		boolean success = true;
 		List<IAtom> sortedAtomsByABCode = new ArrayList<IAtom>(conflictedAtoms);
@@ -444,7 +422,6 @@ public class EncodeReactionCode {
 					atom1.setProperty("hasUniquePosition", false);
 				}
 				else {
-					System.out.println(abCode1 + " " + abCode2);
 					if (currentPosition == (int) atom2.getProperty("position"))
 						newPosition--;
 				}
@@ -454,6 +431,10 @@ public class EncodeReactionCode {
 		return success;
 	}
 	
+	/**
+	 * @param pseudoMol
+	 * @return
+	 */
 	private boolean nextLayersSolver(IAtomContainer pseudoMol) {
 		boolean success = true;
 		int size = conflictedAtoms.size();
@@ -506,6 +487,13 @@ public class EncodeReactionCode {
 		return success;
 	}
 	
+	/**
+	 * @param pseudoMol
+	 * @param l1
+	 * @param l2
+	 * @param depth
+	 * @return
+	 */
 	private int nextLayersSolver(IAtomContainer pseudoMol, List<IAtom> l1, List<IAtom> l2, int depth) {
 		List<String> abCodes1 = new ArrayList<String>();
 		List<String> abCodes2= new ArrayList<String>();
@@ -573,6 +561,11 @@ public class EncodeReactionCode {
 		}
 	}
 	
+	/**
+	 * @param depth
+	 * @param connectedAtom
+	 * @return
+	 */
 	private List<IAtom> getConnectedAtomPresentInCurrentLayer(int depth, List<IAtom> connectedAtom) {
 		List<IAtom> connectedAtomsInNextLayer = new ArrayList<IAtom>();
 		for (IAtom a : connectedAtom) {
@@ -582,6 +575,11 @@ public class EncodeReactionCode {
 		return connectedAtomsInNextLayer;
 	}
 	
+	/**
+	 * @param depth
+	 * @param connectedAtom
+	 * @return
+	 */
 	private List<IAtom> getConnectedAtomPresentInNextLayer(int depth, List<IAtom> connectedAtom) {
 		List<IAtom> connectedAtomsInNextLayer = new ArrayList<IAtom>();
 		for (IAtom a : connectedAtom) {
@@ -597,7 +595,7 @@ public class EncodeReactionCode {
 	 * @param numberOfRepetitions
 	 * @return
 	 */
-	private Map<String,String> generate2(Map<Integer, Set<IAtom>> sphereList, Map<String, Integer> numberOfRepetitions) {
+	private Map<String,String> finish(Map<Integer, Set<IAtom>> sphereList, Map<String, Integer> numberOfRepetitions) {
 		Map<Integer,String> tempResult = new TreeMap<Integer,String>();
 		int leavingIndicator = sphereList.size()*2;
 		
@@ -889,303 +887,6 @@ public class EncodeReactionCode {
 		return result;
 	}
 	
-	/**
-	 * @param sphereList
-	 * @param numberOfRepetitions
-	 * @return
-	 */
-	private Map<String,String> generate(Map<Integer, Set<IAtom>> sphereList, Map<String, Integer> numberOfRepetitions) {
-		Map<Integer,String> tempResult = new TreeMap<Integer,String>();
-		int leavingIndicator = sphereList.size()*2;
-		
-		Map<IAtom, Integer> positionsOfStayingAtoms = new HashMap<IAtom, Integer>();
-		Map<IAtom, Integer> positionsOfLeavingAtoms = new HashMap<IAtom, Integer>();
-		
-		for (Entry<Integer, Set<IAtom>> e : sphereList.entrySet()) {
-			StringBuilder stayingCodes = new StringBuilder();
-			StringBuilder leavingCodes = new StringBuilder();
-			String[] stayingComplementCodes = new String[3];
-			String[] leavingComplementCodes = new String[3];
-			
-			//initialize
-			stayingComplementCodes[0] = "";
-			stayingComplementCodes[1] = "";
-			stayingComplementCodes[2] = "";
-			leavingComplementCodes[0] = "";
-			leavingComplementCodes[1] = "";
-			leavingComplementCodes[2] = "";
-			
-			int depth = e.getKey();
-			List<IAtom> atoms = new ArrayList<IAtom>(e.getValue());
-//			Collections.sort(atoms, new CompareByRank());
-			Collections.sort(atoms, new CompareByPriority());
-			List<IBond> bondToAdd = new ArrayList<IBond>();
-			
-			int cptStaying = 0;
-			int cptLeaving = 0;
-			for (IAtom atom : atoms) {
-				if (depth > 0) {
-					if (atom.getProperty(additionalConstants.LEAVING_ATOM) != null) {
-						positionsOfLeavingAtoms.put(atom, positionsOfLeavingAtoms.size());
-					}
-					else {
-						positionsOfStayingAtoms.put(atom, positionsOfStayingAtoms.size());
-					}
-				}
-				else {
-					positionsOfStayingAtoms.put(atom, positionsOfStayingAtoms.size());
-				}
-				List<IBond> bonds = mol.getConnectedBondsList(atom);
-				for (IBond b : bonds) {
-					IAtom other = b.getOther(atom);
-					if (positionsOfStayingAtoms.containsKey(other) || positionsOfLeavingAtoms.containsKey(other)) {
-						bondToAdd.add(b);
-					}
-				}
-				StringBuilder code = new StringBuilder();
-				//add atom
-				String[] atomCode = atom.getProperty("code").toString().split("_")[0].split("/");
-
-				String atomComplement = ""; 
-				if (atomCode.length > 1) {
-					atomComplement = atomCode[1];
-				}
-
-				code.append(atomCode[0]);
-				code.append("(");
-				
-				//add bonds
-				List<String> bondCodes = new ArrayList<String>();
-				for (IBond b : bondToAdd) {
-					String bondCode = b.getProperty("code").toString().split("_")[0] + "|";
-					String pos = "";
-					if (positionsOfStayingAtoms.get(b.getOther(atom)) != null) {
-						pos = connectionTableAlphabet.get(positionsOfStayingAtoms.get(b.getOther(atom)));
-					}
-					else if (positionsOfLeavingAtoms.get(b.getOther(atom)) != null) {
-						pos = String.format("%02X", positionsOfLeavingAtoms.get(b.getOther(atom)));
-					}
-					if (pos.length() > 0) {
-						bondCode += pos;
-						bondCodes.add(bondCode);
-					}
-					
-				}
-				Collections.sort(bondCodes, Collections.reverseOrder());
-				int cptBond = 0;
-				Map<Integer,String> bondComplements = new HashMap<Integer,String>();
-				for (String bCode : bondCodes) {
-					String[] codeAndConnections = bCode.split("\\|");
-					String bondCode = codeAndConnections[0];
-					String connections = "";
-					if (codeAndConnections.length > 1) {
-						connections = codeAndConnections[1];
-					}
-					String[] bondCodeWithComp = bondCode.split("/");
-					bondCode = bondCodeWithComp[0];
-					if (bondType == false) {
-						bondCode = "";
-					}
-					bondCode += connections;
-					if (bondCodeWithComp.length > 1) {
-						bondComplements.put(cptBond, bondCodeWithComp[1]);
-					}
-
-					code.append(bondCode);
-					cptBond++;
-				}
-				code.append(")");
-				if (repetition == true) {
-					code.append("["+numberOfRepetitions.get(atom.getID())+"]");
-				}
-				
-				if (depth > 0) {
-					if (atom.getProperty(additionalConstants.LEAVING_ATOM) != null) {
-						leavingCodes.append(code.toString());
-						
-						//add complementary information (stereo and charge)
-						String charges = leavingComplementCodes[0];
-						String stereo = leavingComplementCodes[1];
-						String isotopes = leavingComplementCodes[2];
-						if (atomComplement.length() > 0) {
-							if (atomComplement.contains("#")) {
-								int indexSymbol = atomComplement.indexOf("#");
-								isotopes += String.format("%02d", cptStaying) + atomComplement.substring(indexSymbol+1, indexSymbol+3);
-								atomComplement = atomComplement.substring(0, indexSymbol);
-							}
-							if (charge == true && stereochemistry == true && atomComplement.length() > 0) {
-								if (atomComplement.contains("@")) {
-									if (atomComplement.indexOf("@") > 0) {
-										charges += String.format("%02d", cptLeaving) + atomComplement.substring(0, 2);
-										stereo += String.format("%02d", cptLeaving) + atomComplement.substring(3);
-									}
-									else {
-										stereo += String.format("%02d", cptLeaving) + atomComplement.substring(1);
-									}
-								}
-								else {
-									charges += String.format("%02d", cptLeaving) + atomComplement.substring(0);
-
-								}
-							}
-							else if (charge == true && stereochemistry == false && atomComplement.length() > 0) {
-								charges += String.format("%02d", cptLeaving) + atomComplement;
-							}
-							else if (charge == false && stereochemistry == true && atomComplement.length() > 0) {
-								stereo += String.format("%02d", cptLeaving) + atomComplement;
-							}
-						}
-						//increment by 1 because 1 atom is added
-						cptLeaving++;
-						for (Entry<Integer,String> e2 : bondComplements.entrySet()) {
-							int index = e2.getKey() + cptLeaving;
-							stereo += String.format("%02d", index) + e2.getValue();
-						}
-						leavingComplementCodes[0] = charges;
-						leavingComplementCodes[1] = stereo;
-						leavingComplementCodes[2] = isotopes;
-						//increment with the number of bonds (corresponds to the position of the next atom)
-						cptLeaving = cptLeaving + cptBond;
-					}
-					else {
-						stayingCodes.append(code.toString());
-						
-						//add complementary information (stereo and charge)
-						String charges = stayingComplementCodes[0];
-						String stereo = stayingComplementCodes[1];
-						String isotopes = stayingComplementCodes[2];
-						if (atomComplement.length() > 0) {
-							if (atomComplement.contains("#")) {
-								int indexSymbol = atomComplement.indexOf("#");
-								isotopes += String.format("%02d", cptStaying) + atomComplement.substring(indexSymbol+1, indexSymbol+3);
-								atomComplement = atomComplement.substring(0, indexSymbol);
-							}
-							if (charge == true && stereochemistry == true && atomComplement.length() > 0) {
-								if (atomComplement.contains("@")) {
-									if (atomComplement.indexOf("@") > 0) {
-										charges += String.format("%02d", cptStaying) + atomComplement.substring(0, 2);
-										stereo += String.format("%02d", cptStaying) + atomComplement.substring(3);
-									}
-									else {
-										stereo += String.format("%02d", cptStaying) + atomComplement.substring(1);
-									}
-								}
-								else {
-									charges +=String.format("%02d",  cptStaying) + atomComplement.substring(0);
-
-								}
-							}
-							else if (charge == true && stereochemistry == false && atomComplement.length() > 0) {
-								charges += String.format("%02d", cptStaying) + atomComplement;
-							}
-							else if  (charge == false && stereochemistry == true && atomComplement.length() > 0) {
-								stereo += String.format("%02d", cptStaying) + atomComplement;
-							}
-						}
-						//increment by 1 because 1 atom is added
-						cptStaying++;
-						for (Entry<Integer,String> e2 : bondComplements.entrySet()) {
-							int index = e2.getKey() + cptStaying;
-							stereo += String.format("%02d", index) + e2.getValue();
-						}
-						stayingComplementCodes[0] = charges;
-						stayingComplementCodes[1] = stereo;
-						stayingComplementCodes[2] = isotopes;
-						//increment with the number of bonds (corresponds to the position of the next atom)
-						cptStaying = cptStaying + cptBond;
-					}
-				}
-				else {
-					stayingCodes.append(code.toString());
-					
-					//add complementary information (stereo and charge)
-					String charges = stayingComplementCodes[0];
-					String stereo = stayingComplementCodes[1];
-					String isotopes = stayingComplementCodes[2];
-					if (atomComplement.length() > 0) {
-						if (atomComplement.contains("#")) {
-							int indexSymbol = atomComplement.indexOf("#");
-							isotopes += String.format("%02d", cptStaying) + atomComplement.substring(indexSymbol+1, indexSymbol+3);
-							atomComplement = atomComplement.substring(0, indexSymbol);
-						}
-						if (charge == true && stereochemistry == true && atomComplement.length() > 0) {
-							if (atomComplement.contains("@")) {
-								if (atomComplement.indexOf("@") > 0) {
-									charges +=String.format("%02d",  cptStaying) + atomComplement.substring(0, 2);
-									stereo += String.format("%02d", cptStaying) + atomComplement.substring(3);
-								}
-								else {
-									stereo += String.format("%02d", cptStaying) + atomComplement.substring(3);
-								}
-							}
-							else {
-								charges += String.format("%02d", cptStaying) + atomComplement.substring(0);
-
-							}
-						}
-						else if (charge == true && stereochemistry == false && atomComplement.length() > 0) {
-							charges += String.format("%02d", cptStaying) + atomComplement;
-						}
-						else if  (charge == false && stereochemistry == true && atomComplement.length() > 0) {
-							stereo += String.format("%02d", cptStaying) + atomComplement.replace("@","");
-						}
-						
-					}
-					//increment by 1 because 1 atom is added
-					cptStaying++;
-					for (Entry<Integer,String> e2 : bondComplements.entrySet()) {
-						int index = e2.getKey() + cptStaying;
-						stereo += String.format("%02d", index) + e2.getValue();
-					}
-					stayingComplementCodes[0] = charges;
-					stayingComplementCodes[1] = stereo;
-					stayingComplementCodes[2] = isotopes;
-					//increment with the number of bonds (corresponds to the position of the next atom)
-					cptStaying = cptStaying + cptBond;
-				}
-			}
-			if (stayingCodes.length() > 0) {
-				if (stayingComplementCodes[0].length() > 0) {
-					stayingCodes.append("/c"+stayingComplementCodes[0]);
-				}
-				if (stayingComplementCodes[1].length() > 0) {
-					stayingCodes.append("/s"+stayingComplementCodes[1]);
-				}
-				if (stayingComplementCodes[2].length() > 0) {
-					stayingCodes.append("/i"+stayingComplementCodes[2]);
-				}
-				tempResult.put(depth, stayingCodes.toString());
-			}
-			if (leavingCodes.length() > 0) {
-				if (leavingComplementCodes[0].length() > 0) {
-					leavingCodes.append("/c"+leavingComplementCodes[0]);
-				}
-				if (leavingComplementCodes[1].length() > 0) {
-					leavingCodes.append("/s"+leavingComplementCodes[1]);
-				}
-				if (leavingComplementCodes[2].length() > 0) {
-					leavingCodes.append("/i"+leavingComplementCodes[2]);
-				}
-				tempResult.put(leavingIndicator+depth, leavingCodes.toString());
-
-			}
-		}
-		
-		//sort result by depth and group
-		Map<String,String> result = new LinkedHashMap<String,String>();
-		for (Entry<Integer,String> e : tempResult.entrySet()) {
-			int depth2 = e.getKey();
-			if (depth2 < leavingIndicator) {
-				result.put(String.valueOf(depth2), e.getValue());
-			}
-			else {
-				int newDepth = depth2 - leavingIndicator;
-				result.put(Character.toString((char) (64+newDepth)), e.getValue());
-			}
-		}
-		
-		return result;
-	}
 
 	/**
 	 * @param acSet
@@ -1428,103 +1129,6 @@ public class EncodeReactionCode {
 	private int encodeBoolean(boolean b) {
 		return b ? 1 : 0;
 	}
-	
-//	/**
-//	 * @param bond
-//	 * @return
-//	 */
-//	private String encodeBondStereoChange(IBond bond) {
-//		if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE) == null) {
-//			return "0";
-//		}
-//		else {
-//			if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.NONE_TO_UP)) {
-//				return "A";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.NONE_TO_DOWN)) {
-//				return "B";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.NONE_TO_UP_INVERTED)) {
-//				return "C";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.NONE_TO_DOWN_INVERTED)) {
-//				return "D";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.NONE_TO_Z)) {
-//				return "E";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.NONE_TO_E)) {
-//				return "F";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.UP_TO_NONE)) {
-//				return "G";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.DOWN_TO_NONE)) {
-//				return "H";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.UP_INVERTED_TO_NONE)) {
-//				return "I";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.DOWN_INVERTED_TO_NONE)) {
-//				return "J";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.Z_TO_NONE)) {
-//				return "K";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.E_TO_NONE)) {
-//				return "L";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.DOWN_TO_UP)) {
-//				return "Z";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.UP_TO_DOWN)) {
-//				return "W";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.DOWN_INVERTED_TO_UP_INVERTED)) {
-//				return "Y";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.UP_INVERTED_TO_DOWN_INVERTED)) {
-//				return "X";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.E_TO_Z)) {
-//				return "Q";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.Z_TO_E)) {
-//				return "R";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.NONE_TO_UP)) {
-//				return "M";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.NONE_TO_DOWN)) {
-//				return "N";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.NONE_TO_UP_INVERTED)) {
-//				return "O";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.NONE_TO_DOWN_INVERTED)) {
-//				return "P";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.NONE_TO_Z)) {
-//				return "9";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.NONE_TO_E)) {
-//				return "8";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.DOWN__TO_UP_INVERTED)) {
-//				return "V";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.UP_TO_DOWN_INVERTED)) {
-//				return "U";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.DOWN_INVERTED_TO_UP)) {
-//				return "T";
-//			}
-//			else if (bond.getProperty(additionalConstants.BOND_STEREO_CHANGE).equals(additionalConstants.UP_INVERTED_TO_DOWN)) {
-//				return "S";
-//			}
-//		}
-//		return "0";
-//	}
 
 
 	/**
@@ -1780,14 +1384,13 @@ public class EncodeReactionCode {
 			atom.setProperty("abCode", abCode);
 		}
 		if (newSphere.size() > 0) {
-			//dead code because the depth start at 1 as atoms in RC is the initlial list
+			//dead code now because the depth start at 1 as atoms in RC are in the initial list
 			/*
 			if (depth == 0) {
 				sphereList.put(0, newSphere);
 			}
 			*/
 			sphereList.put(depth, newSphere);
-			//System.out.println(sphereList);
 			generateAllAtomAndBondCodes(newSphere, indexAtomReactants, indexBondReactants, atomContainer, 
 					sphereList, visited, depth+1, cpt-1);
 		}
@@ -1816,40 +1419,10 @@ public class EncodeReactionCode {
 		return Integer.toHexString(11);
 	}
 
-//	/**
-//	 * @param hybridization
-//	 * @return
-//	 */
-//	private IAtomType.Hybridization hybridizationDecoding(String hybridization) {
-//		if (Integer.parseInt(hybridization,16) == 1) return IAtomType.Hybridization.PLANAR3;
-//		if (Integer.parseInt(hybridization,16) == 2) return IAtomType.Hybridization.S;
-//		if (Integer.parseInt(hybridization,16) == 3) return IAtomType.Hybridization.SP1;
-//		if (Integer.parseInt(hybridization,16) == 4) return IAtomType.Hybridization.SP2;
-//		if (Integer.parseInt(hybridization,16) == 5) return IAtomType.Hybridization.SP3;
-//		if (Integer.parseInt(hybridization,16) == 6) return IAtomType.Hybridization.SP3D1;
-//		if (Integer.parseInt(hybridization,16) == 7) return IAtomType.Hybridization.SP3D2;
-//		if (Integer.parseInt(hybridization,16) == 8) return IAtomType.Hybridization.SP3D3;
-//		if (Integer.parseInt(hybridization,16) == 9) return IAtomType.Hybridization.SP3D4;
-//		if (Integer.parseInt(hybridization,16) == 10) return IAtomType.Hybridization.SP3D5;
-//		return null;
-//	}
-
-//	/**
-//	 * @param acSet
-//	 * @return
-//	 */
-//	private HashMap<String, IAtomType.Hybridization> indexIDHybridization (IAtomContainerSet acSet) {
-//		HashMap<String, IAtomType.Hybridization> result = new HashMap<String, IAtomType.Hybridization>();
-//
-//		for (int i = 0; i < acSet.getAtomContainerCount(); i ++) {
-//			IAtomContainer ac = acSet.getAtomContainer(i);
-//			for (int j = 0; j < ac.getAtomCount(); j++) {
-//				result.put(ac.getAtom(j).getID(), ac.getAtom(j).getHybridization());
-//			}
-//		}
-//		return result;
-//	}
-
+	/**
+	 * @param atom
+	 * @return
+	 */
 	private String encodeSymbol(IAtom atom) {
 		String code = null;
 		String symbol = atom.getSymbol();
@@ -1919,688 +1492,7 @@ public class EncodeReactionCode {
 		
 		return (centerStatusValue != -1) ? centerStatusValue : 0;
 	}
-
-	/**
-	 * @param atomInRC
-	 * @return
-	 */
-	private List<IAtom> getRootAtoms(List<IAtom> atomInRC) {
-		List<IAtom> root = new ArrayList<IAtom>();
-		if (atomInRC.size() < 2) {
-			root.add(atomInRC.get(0));
-			return root;
-		}
-		else {
-			if (!atomInRC.get(0).getProperty("code").equals(atomInRC.get(1).getProperty("code"))) {
-				root.add(atomInRC.get(0));
-				return root;
-			}
-			//compare
-			else {
-				List<IAtom> solutions = new ArrayList<IAtom>();
-				Map<Integer, Set<IAtom>> conflicts = new HashMap<Integer, Set<IAtom>>();
-				Map<Integer,Integer> colors = new HashMap<Integer,Integer>();
-				for (int i = 0; i < atomInRC.size(); i++) {
-					if (i == 0) {
-						solutions.add(atomInRC.get(i));
-						Set<IAtom> set = new HashSet<IAtom>();
-						set.add(atomInRC.get(i));
-						conflicts.put(i, set);
-						colors.put(i, 1);
-					}
-					else if (atomInRC.get(0).getProperty("code").equals(atomInRC.get(i).getProperty("code"))){
-						solutions.add(atomInRC.get(i));
-						Set<IAtom> set = new HashSet<IAtom>();
-						set.add(atomInRC.get(i));
-						conflicts.put(i, set);
-						colors.put(i, 1);
-					}
-					else{
-						break;
-					}
-				}
-				//all path are similar ex c1ccccc1
-				if (solutions.size() == atomInRC.size()) {
-					root.add(atomInRC.get(0));
-					return root;
-				}
-				//Explore neighbors to get best solution
-				else {
-					//C1CCN2CCCCN2C1
-//					Map<IAtom,Integer> colors = initColors(solutions);
-//					attributeColorsByNextNeighbors(solutions, colors, new HashMap<IAtom,List<IAtom>>(), new HashMap<IAtom,List<IAtom>>());
-					attributeColorsByNextNeighbors(conflicts, colors, 
-							new HashMap<Integer, String>(), new HashMap<Integer,List<IAtom>>()) ;
-//					System.out.println(colors);
-//					return indexColorsToList(colors).get(0);
-					root = makeListOfAtoms(getIndexesOfAtomsWithTheBestColor(colors), atomInRC);
-					return root;
-				}
-			}
-		}
-	}
 	
-	/**
-	 * @param indexes
-	 * @param atomInRC
-	 * @return
-	 */
-	private List<IAtom> makeListOfAtoms(List<Integer> indexes, List<IAtom> atomInRC) {
-		List<IAtom> res = new ArrayList<IAtom>();
-		for (int index : indexes) {
-			res.add(atomInRC.get(index));
-		}
-		return res;
-	}
-	
-	/**
-	 * @param colors
-	 * @return
-	 */
-	private List<Integer> getIndexesOfAtomsWithTheBestColor(Map<Integer,Integer> colors) {
-		List<Integer> result = new ArrayList<Integer>();
-		
-		List<Integer> allColors = new ArrayList<Integer>(colors.values());
-		Collections.sort(allColors);
-		
-		int bestColor = allColors.get(0);
-		
-		for (Entry<Integer,Integer> e : colors.entrySet()) {
-			int color = e.getValue();
-			
-			if (color == bestColor) {
-				result.add(e.getKey());
-			}
-		}
-
-		return result;
-	}
-	
-	/**
-	 * @param conflicts
-	 * @param colorOfAtoms
-	 * @param paths
-	 * @param visited
-	 */
-	private void attributeColorsByNextNeighbors(Map<Integer, Set<IAtom>> conflicts, Map<Integer,Integer> colorOfAtoms, 
-			Map<Integer, String> paths, Map<Integer,List<IAtom>> visited) {
-		
-		if (conflicts.isEmpty()) {
-			return;
-		}
-		else {
-			//update path code
-			List<Integer> keysToRemoveInConflicts = new ArrayList<Integer>(); 
-			for (Entry<Integer, Set<IAtom>> e : conflicts.entrySet()) {
-				int key = e.getKey();
-				Set<IAtom> newSphere = new HashSet<IAtom>();
-				Set<IAtom> sphere = e.getValue();
-				List<IAtom> visitedAtoms;
-				if (visited.get(key) != null) {
-					visitedAtoms = visited.get(key);
-				}
-				else {
-					visitedAtoms = new ArrayList<IAtom>();
-				}
-				
-				List<String> pathCodes = new ArrayList<String>();
-//				System.out.println(sphere.size() + " " + conflicts.size());
-				visitedAtoms.addAll(sphere);
-				for (IAtom atom : sphere) {
-					List<IBond> bonds = mol.getConnectedBondsList(atom);
-					for (IBond bond : bonds) {
-						IAtom other = bond.getOther(atom);
-						if (!visitedAtoms.contains(other)) {
-							newSphere.add(other);
-							StringBuilder codeBuilder = new StringBuilder();
-							codeBuilder.append(other.getProperty("code").toString()+ "-");
-							List<IBond> bondsOfOther = mol.getConnectedBondsList(other);
-							List<String> bondsCode = new ArrayList<String>();
-							for (IBond bondOfOther : bondsOfOther) {
-								bondsCode.add(bondOfOther.getProperty("code").toString());
-							}
-							Collections.sort(bondsCode, Collections.reverseOrder());
-							for (String bcode : bondsCode) {
-								codeBuilder.append(bcode);
-							}
-							codeBuilder.append("_");
-							pathCodes.add(codeBuilder.toString());
-						}
-					}
-				}
-				if (!newSphere.isEmpty()) {
-					conflicts.put(key, newSphere);
-				}
-				else {
-					keysToRemoveInConflicts.add(key);
-				}
-				visited.put(key, visitedAtoms);
-				
-				Collections.sort(pathCodes, Collections.reverseOrder());
-				StringBuilder path = new StringBuilder();
-				for (String s : pathCodes) {
-					path.append(s);
-				}
-				String newPath; 
-				if (paths.containsKey(key)) {
-					newPath = paths.get(key) + path.toString();
-				}
-				else {
-					newPath = path.toString();
-				}
-//				System.out.println(key + " " +newPath);
-				paths.put(key, newPath);
-			}
-			
-			//update colors
-			Map<Integer,Integer> colorOfAtomsCopy = new HashMap<Integer,Integer>(colorOfAtoms);
-			for (int i : paths.keySet()) {
-				String path1 = paths.get(i);
-//				System.out.println("p1 "+ path1);
-				if (!conflicts.containsKey(i)) {
-					continue;
-				}
-				for (int j : paths.keySet()) {
-					if (i == j) {
-						continue;
-					}
-					if (!conflicts.containsKey(j)) {
-						continue;
-					}
-					String path2 = paths.get(j);
-//					System.out.println("p1 "+ i + " " + path1);
-//					System.out.println("p2 "+ j + " " + path2);
-					if (path1.compareTo(path2) > 0 && colorOfAtomsCopy.get(i) == colorOfAtomsCopy.get(j)) {
-						int color = colorOfAtoms.get(j) + 1;
-						colorOfAtoms.put(j, color);
-					}
-				}
-			}
-			
-			//find index of atom(s) with an unique color and remove it of the next iteration
-			Map<Integer,List<Integer>> sameColorCounter = new HashMap<Integer,List<Integer>>();
-			for (int i = 0; i < colorOfAtoms.size(); i++) {
-				int color = colorOfAtoms.get(i);
-				if (!sameColorCounter.containsKey(color)) {
-					List<Integer> indexes = new ArrayList<Integer>();
-					indexes.add(i);
-					sameColorCounter.put(color, indexes);
-				}
-				else {
-					List<Integer> indexes = sameColorCounter.get(color);
-					indexes.add(i);
-					sameColorCounter.put(color, indexes);
-				}
-			}
-			for (List<Integer> list : sameColorCounter.values()) {
-				if (list.size() == 1) {
-					int key = list.get(0);
-//					System.out.println(key + " " + paths.get(key));
-					conflicts.remove(key);
-					paths.remove(key);
-					visited.remove(key);
-				}
-			}
-			
-			for (int k : keysToRemoveInConflicts) {
-				conflicts.remove(k);
-			}
-//			System.out.println("colors " +colorOfAtoms);
-			attributeColorsByNextNeighbors(conflicts, colorOfAtoms, paths, visited);
-		}
-	}
-	
-	/**
-	 * 
-	 */
-	private void resetRankingProperties() {
-		for (IAtom atom : mol.atoms()) {
-			atom.removeProperty("priority");
-			atom.removeProperty("rank");
-			atom.removeProperty("pos");
-		}
-	}
-	
-	/**
-	 * @param atom
-	 */
-	private void resetRankingProperties(IAtom atom) {			
-		atom.removeProperty("priority");
-		atom.removeProperty("rank");
-		atom.removeProperty("pos");
-	}
-	
-	/**
-	 * Attribute a priority of each atom in the reaction centre in order to be later ranked. 
-	 * NB: List to process contains the atom in the reaction center and the algorithm continue until this list is not null
-	 * (ie all atoms in the RC have been processed). Indeed, 2 independent reaction center in the pseudo molecule may occur,
-	 * in that case, the algorithm need to classify in function of the determined root.
-	 * @param sphere
-	 * @param visited
-	 * @param toProcess
-	 * @param depth
-	 * @param pos
-	 * @return
-	 */
-	private void rankedAtomsInReactionCentre(Set<IAtom> sphere, List<IAtom> visited, 
-			List<IAtom> toProcess, int depth, int pos) {
-		Set<IAtom> newSphere = new HashSet<IAtom>();
-		Map<IAtom, IAtom> prevAdj = new HashMap<IAtom, IAtom>();
-		Map<String, List<IAtom>> codesOfAtoms = new TreeMap<String, List<IAtom>>(Collections.reverseOrder()); 
-		
-		if (depth == 0) {
-			IAtom first = sphere.iterator().next();
-			first.setProperty("priority", first.getProperty("code") +  "_" + pos);
-			first.setProperty("rank",depth + "_" + 0);
-			first.setProperty("pos", pos);
-			depth++;
-			pos--;
-		}
-
-		visited.addAll(sphere);
-		toProcess.removeAll(sphere);
-		for (IAtom atom : sphere) {
-			List<IBond> bonds = mol.getConnectedBondsList(atom);
-			for (IBond bond : bonds) {
-				IAtom other = bond.getOther(atom);
-				if (!visited.contains(other)) {
-					String code = depth + "_" + other.getProperty("code").toString() + "-";
-					List<IBond> bondsOfOther = mol.getConnectedBondsList(other);
-					List<String> bondsCode = new ArrayList<String>();
-					int posCounter = 0;
-					for (IBond bondOfOther : bondsOfOther) {
-						bondsCode.add(bondOfOther.getProperty("code").toString());
-						IAtom other2 = bondOfOther.getOther(other);
-						if (other2.getProperty("pos") != null) {
-							int cPos = other2.getProperty("pos");
-							posCounter += cPos;
-						}
-					}
-					code += ":" + posCounter;
-					Collections.sort(bondsCode, Collections.reverseOrder());
-					for (String bcode : bondsCode) {
-						code += bcode;
-					}
-					
-					if (!codesOfAtoms.containsKey(code)) {
-						List<IAtom> list = new ArrayList<IAtom>();
-						list.add(other);
-						codesOfAtoms.put(code, list);
-					}
-					else {
-						List<IAtom> list = codesOfAtoms.get(code);
-						if (!list.contains(other)) {
-							list.add(other);
-							codesOfAtoms.put(code, list);
-						}
-					}
-					if (!visited.contains(other)) {
-						newSphere.add(other);
-					}
-				}
-				if (prevAdj.containsKey(other)) {
-					IAtom prev = prevAdj.get(other);
-					if (atom.getProperty("rank").toString().compareTo(prev.getProperty("rank").toString()) > 0) {
-						prevAdj.put(other, prev);
-					}
-				}
-				else {
-					prevAdj.put(other, atom);
-				}
-			}
-		}
-		
-		int cpt = 0;
-		List<IAtom> processed = new ArrayList<IAtom>();
-//		System.out.println(codesOfAtoms.keySet());
-		for (Entry<String, List<IAtom>> e : codesOfAtoms.entrySet()) {
-//			String code = e.getKey();
-			List<IAtom> atoms = e.getValue();
-//			System.out.println("codesOfAtoms " + code + " atomSize " + atoms.size());
-//			System.out.println("cpt " + cpt + " codesOfAtoms " + code + " atomSize " + atoms.size());
-			if (atoms.size() == 1 && !processed.contains(atoms.get(0))) {
-//				code += cpt;
-				IAtom atom = atoms.get(0);
-				atom.setProperty("priority", atom.getProperty("code") +  "_" + pos);
-				atom.setProperty("rank", depth + "_" + cpt);
-				atom.setProperty("pos", pos);
-//				System.out.println("depth " + depth + " " + code + " " + atoms.get(0).getProperty("rank") + " " +
-//						atoms.get(0).getProperty("uID"));
-				processed.add(atoms.get(0));
-				pos--;
-				cpt++;
-			}
-			else {
-				//classify
-//				if (atoms.get(0).getProperty("rank") != null) {
-//					//comparator according to rank
-//				}
-//				else {
-					//solve using previous
-					Map<Integer, Set<IAtom>> conflicts = new HashMap<Integer, Set<IAtom>>();
-					Map<Integer,Integer> colors = new HashMap<Integer,Integer>();
-					for (int i = 0; i < atoms.size(); i++) {
-						Set<IAtom> set = new HashSet<IAtom>();
-						set.add(atoms.get(i));
-						conflicts.put(i, set);
-						colors.put(i, 0);
-//						System.out.println(atoms.get(i).getProperties());
-					}
-					
-					//update colors
-					Map<Integer,Integer> colorOfAtomsCopy = new HashMap<Integer,Integer>(colors);
-					for (int i = 0; i < atoms.size(); i++) {
-//						System.out.println(prevAdj.get(atoms.get(i)).getProperties());
-						String rank1 = prevAdj.get(atoms.get(i)).getProperty("rank");
-						for (int j = 0; j < atoms.size(); j++) {
-							if (i == j) {
-								continue;
-							}
-							String rank2 = prevAdj.get(atoms.get(j)).getProperty("rank");
-							if (rank1.compareTo(rank2) < 0 && colorOfAtomsCopy.get(i) == colorOfAtomsCopy.get(j)) {
-								int color = colors.get(j) + 1;
-								colors.put(j, color);
-							}
-						}
-					}
-					
-					//find index of atom(s) with an unique color and remove it of the next iteration
-					Map<Integer,List<Integer>> sameColorCounter = new HashMap<Integer,List<Integer>>();
-					for (int i = 0; i < colors.size(); i++) {
-						int color = colors.get(i);
-						if (!sameColorCounter.containsKey(color)) {
-							List<Integer> indexes = new ArrayList<Integer>();
-							indexes.add(i);
-							sameColorCounter.put(color, indexes);
-						}
-						else {
-							List<Integer> indexes = sameColorCounter.get(color);
-							indexes.add(i);
-							sameColorCounter.put(color, indexes);
-						}
-					}
-					int cpt2 = 0;
-					for (List<Integer> list : sameColorCounter.values()) {
-						if (list.size() == 1) {
-							int key = list.get(0);
-							conflicts.remove(key);
-							IAtom atom = atoms.get(key);
-							int score = cpt + colors.get(key);
-							atom.setProperty("priority", atom.getProperty("code") +  "_" + pos);
-							atom.setProperty("rank", depth + "_" + score);
-							atom.setProperty("pos", pos);
-//							System.out.println("depth " + depth + " " + code + " " +atom.getProperty("rank") + 
-//									 " " +atom.getProperty("uID"));
-							processed.add(atom);
-							pos--;
-							cpt2++;
-						}
-					}
-
-					//solve using next
-					if (conflicts.size() > 0) {
-//						System.out.println("depth " + depth + " " +conflicts);
-//						for (int l = 0; l < conflicts.size(); l++) {
-//							System.out.println(conflicts.get(l).iterator().next().getProperties() + " " + conflicts.get(l).iterator().next());
-//						}
-						//Explore neighbors to get best solution
-						attributeColorsByNextNeighbors(conflicts, colors, 
-									new HashMap<Integer, String>(), new HashMap<Integer,List<IAtom>>());
-					}
-//					System.out.println(colors);
-					
-					//ascending sort by color 
-					Map<Integer,Integer> sortedAtomIndexByColors = sortByValue(colors);
-					
-//					System.out.println("sort " + sortedAtomIndexByColors + " " + cpt);
-					
-					for (Entry<Integer,Integer> e2 : sortedAtomIndexByColors.entrySet()) {
-						IAtom atom = atoms.get(e2.getKey());
-						int color = e2.getValue();
-						if (!processed.contains(atom)) {
-							int score = cpt + color;
-//							System.out.println("score " + score + " cpt " + cpt + " color "+ color);
-							atom.setProperty("priority", atom.getProperty("code") +  "_" + pos);
-							atom.setProperty("rank", depth + "_" + score);
-							atom.setProperty("pos", pos);
-//							System.out.println("depth " + depth + " " + code + " " +atom.getProperty("rank") + 
-//									 " " +atom.getProperty("uID"));							
-							processed.add(atom);
-							pos--;
-							cpt2++;
-						}
-					}
-					cpt += cpt2;
-//				}
-				
-				
-				//1 look in first atom if rank exist
-				//2 if not compare using best prev
-				//3 if not compare using next neighboors by making all path and then set rank
-					//map<IAtom[], code> ne pas oublier de mettre copy de visited pour exclure les atomes deja visites
-				//attirbuer color type depth+codeBOnd+mcode
-			}
-		}
-		
-//		for (IAtom atom : newSphere) {
-//			System.out.println("depth " + depth + " code " + atom.getProperty("code") + " rank " + atom.getProperty("rank") + " uID " +
-//					atom.getProperty("uID"));
-//		}
-		
-		if (newSphere.isEmpty() || toProcess.isEmpty()) {
-			//remove property of non reaction centre atoms
-			for (IAtom atom : visited) {
-				if (atom.getProperty(additionalConstants.REACTION_CENTER) == null) {
-					resetRankingProperties(atom);
-				}
-			}
-			return;
-		}
-		else {
-			rankedAtomsInReactionCentre(newSphere, visited, toProcess, depth+1, pos);
-		}
-	}
-
-	/**
-	 * @param sphere
-	 * @param visited
-	 * @param depth
-	 * @param pos
-	 */
-	private void rankedAtomsOutsideReactionCentre(Set<IAtom> sphere, List<IAtom> visited, int depth, int pos) {
-		Set<IAtom> newSphere = new HashSet<IAtom>();
-		Map<IAtom, IAtom> prevAdj = new HashMap<IAtom, IAtom>();
-		Map<String, List<IAtom>> codesOfAtoms = new TreeMap<String, List<IAtom>>(Collections.reverseOrder()); 
-		
-		visited.addAll(sphere);
-		for (IAtom atom : sphere) {
-			List<IBond> bonds = mol.getConnectedBondsList(atom);
-			for (IBond bond : bonds) {
-				IAtom other = bond.getOther(atom);
-				if (!visited.contains(other)) {
-					String code = depth + "_" + other.getProperty("code").toString() + "-";
-					List<IBond> bondsOfOther = mol.getConnectedBondsList(other);
-					List<String> bondsCode = new ArrayList<String>();
-					int posCounter = 0;
-					for (IBond bondOfOther : bondsOfOther) {
-						bondsCode.add(bondOfOther.getProperty("code").toString());
-						IAtom other2 = bondOfOther.getOther(other);
-						if (other2.getProperty("pos") != null) {
-							int cPos = other2.getProperty("pos");
-							posCounter += cPos;
-						}
-					}
-					code += ":" + posCounter;
-					Collections.sort(bondsCode, Collections.reverseOrder());
-					for (String bcode : bondsCode) {
-						code += bcode;
-					}
-					
-					if (!codesOfAtoms.containsKey(code)) {
-						List<IAtom> list = new ArrayList<IAtom>();
-						list.add(other);
-						codesOfAtoms.put(code, list);
-					}
-					else {
-						List<IAtom> list = codesOfAtoms.get(code);
-						if (!list.contains(other)) {
-							list.add(other);
-							codesOfAtoms.put(code, list);
-						}
-					}
-					newSphere.add(other);
-				}
-				if (prevAdj.containsKey(other)) {
-					IAtom prev = prevAdj.get(other);
-					if (atom.getProperty("rank").toString().compareTo(prev.getProperty("rank").toString()) > 0) {
-						prevAdj.put(other, prev);
-					}
-				}
-				else {
-					prevAdj.put(other, atom);
-				}
-			}
-		}
-		
-		int cpt = 0;
-		List<IAtom> processed = new ArrayList<IAtom>();
-//		System.out.println(codesOfAtoms.keySet());
-		for (Entry<String, List<IAtom>> e : codesOfAtoms.entrySet()) {
-//			String code = e.getKey();
-			List<IAtom> atoms = e.getValue();
-//			System.out.println("codesOfAtoms " + code + " atomSize " + atoms.size());
-//			System.out.println("cpt " + cpt + " codesOfAtoms " + code + " atomSize " + atoms.size());
-			if (atoms.size() == 1 && !processed.contains(atoms.get(0))) {
-//				code += cpt;
-				IAtom atom = atoms.get(0);
-				atom.setProperty("priority", atom.getProperty("code") +  "_" + pos);
-				atom.setProperty("rank", depth + "_" + cpt);
-				atom.setProperty("pos", pos);
-//				System.out.println("depth " + depth + " " + code + " " + atoms.get(0).getProperty("rank") + " " +
-//						atoms.get(0).getProperty("uID"));
-				processed.add(atoms.get(0));
-				pos--;
-				cpt++;
-			}
-			else {
-				//classify
-//				if (atoms.get(0).getProperty("rank") != null) {
-//					//comparator according to rank
-//				}
-//				else {
-					//solve using previous
-					Map<Integer, Set<IAtom>> conflicts = new HashMap<Integer, Set<IAtom>>();
-					Map<Integer,Integer> colors = new HashMap<Integer,Integer>();
-					for (int i = 0; i < atoms.size(); i++) {
-						Set<IAtom> set = new HashSet<IAtom>();
-						set.add(atoms.get(i));
-						conflicts.put(i, set);
-						colors.put(i, 0);
-//						System.out.println(atoms.get(i).getProperties());
-					}
-					
-					//update colors
-					Map<Integer,Integer> colorOfAtomsCopy = new HashMap<Integer,Integer>(colors);
-					for (int i = 0; i < atoms.size(); i++) {
-//						System.out.println(prevAdj.get(atoms.get(i)).getProperties());
-						String rank1 = prevAdj.get(atoms.get(i)).getProperty("rank");
-						for (int j = 0; j < atoms.size(); j++) {
-							if (i == j) {
-								continue;
-							}
-							String rank2 = prevAdj.get(atoms.get(j)).getProperty("rank");
-							if (rank1.compareTo(rank2) < 0 && colorOfAtomsCopy.get(i) == colorOfAtomsCopy.get(j)) {
-								int color = colors.get(j) + 1;
-								colors.put(j, color);
-							}
-						}
-					}
-					
-					//find index of atom(s) with an unique color and remove it of the next iteration
-					Map<Integer,List<Integer>> sameColorCounter = new HashMap<Integer,List<Integer>>();
-					for (int i = 0; i < colors.size(); i++) {
-						int color = colors.get(i);
-						if (!sameColorCounter.containsKey(color)) {
-							List<Integer> indexes = new ArrayList<Integer>();
-							indexes.add(i);
-							sameColorCounter.put(color, indexes);
-						}
-						else {
-							List<Integer> indexes = sameColorCounter.get(color);
-							indexes.add(i);
-							sameColorCounter.put(color, indexes);
-						}
-					}
-					int cpt2 = 0;
-					for (List<Integer> list : sameColorCounter.values()) {
-						if (list.size() == 1) {
-							int key = list.get(0);
-							conflicts.remove(key);
-							IAtom atom = atoms.get(key);
-							int score = cpt + colors.get(key);
-							atom.setProperty("priority", atom.getProperty("code") +  "_" + pos);
-							atom.setProperty("rank", depth + "_" + score);
-							atom.setProperty("pos", pos);
-//							System.out.println("depth " + depth + " " + code + " " +atom.getProperty("rank") + 
-//									 " " +atom.getProperty("uID"));
-							processed.add(atom);
-							pos--;
-							cpt2++;
-						}
-					}
-
-					//solve using next
-					if (conflicts.size() > 0) {
-//						System.out.println("depth " + depth + " " +conflicts);
-//						for (int l = 0; l < conflicts.size(); l++) {
-//							System.out.println(conflicts.get(l).iterator().next().getProperties() + " " + conflicts.get(l).iterator().next());
-//						}
-						//Explore neighbors to get best solution
-						attributeColorsByNextNeighbors(conflicts, colors, 
-									new HashMap<Integer, String>(), new HashMap<Integer,List<IAtom>>());
-					}
-//					System.out.println(colors);
-					
-					//ascending sort by color 
-					Map<Integer,Integer> sortedAtomIndexByColors = sortByValue(colors);
-					
-//					System.out.println("sort " + sortedAtomIndexByColors + " " + cpt);
-					
-					for (Entry<Integer,Integer> e2 : sortedAtomIndexByColors.entrySet()) {
-						IAtom atom = atoms.get(e2.getKey());
-						int color = e2.getValue();
-						if (!processed.contains(atom)) {
-							int score = cpt + color;
-//							System.out.println("score " + score + " cpt " + cpt + " color "+ color);
-							atom.setProperty("priority", atom.getProperty("code") +  "_" + pos);
-							atom.setProperty("rank", depth + "_" + score);
-							atom.setProperty("pos", pos);
-//							System.out.println("depth " + depth + " " + code + " " +atom.getProperty("rank") + 
-//									 " " +atom.getProperty("uID"));							
-							processed.add(atom);
-							pos--;
-							cpt2++;
-						}
-					}
-					cpt += cpt2;
-//				}
-				
-
-			}
-		}
-		
-//		for (IAtom atom : newSphere) {
-//			System.out.println("depth " + depth + " code " + atom.getProperty("code") + " rank " + atom.getProperty("rank") + " uID " +
-//					atom.getProperty("uID"));
-//		}
-		
-		if (newSphere.isEmpty()) {
-			return;
-		}
-		else {
-			rankedAtomsOutsideReactionCentre(newSphere, visited, depth+1, pos);
-		}
-	}
 
 	/**
 	 * @param map
@@ -2636,7 +1528,7 @@ public class EncodeReactionCode {
 	 * @param map
 	 * @return
 	 */
-	private <K, V extends Comparable<? super V>> Map<K, V> sortByValue(Map<K, V> map) {
+	/*private <K, V extends Comparable<? super V>> Map<K, V> sortByValue(Map<K, V> map) {
         List<Entry<K, V>> list = new ArrayList<>(map.entrySet());
         list.sort(Entry.comparingByValue());
 
@@ -2647,10 +1539,9 @@ public class EncodeReactionCode {
 
         return result;
     }
+	*/
 	
-	/**
-	 * @return
-	 */
+	
 	/**
 	 * @return
 	 */
@@ -2721,15 +1612,6 @@ public class EncodeReactionCode {
 	}
 }
 
-//descending comparison res = (3,2,1)
-class CompareByPriority implements Comparator<IAtom> { 
-	public int compare(IAtom a1, IAtom a2) { 
-		if (((String) a1.getProperty("priority")).compareTo(a2.getProperty("priority")) < 0)
-			return 1;
-		else 
-			return -1;
-	} 
-}
 
 //ascending comparison res = (1,2,3)
 class CompareByPosition implements Comparator<IAtom> { 
@@ -2738,15 +1620,6 @@ class CompareByPosition implements Comparator<IAtom> {
 			return 1;
 		else 
 			return -1;
-	} 
-}
-
-class CompareByRank implements Comparator<IAtom>{ 
-	public int compare(IAtom a1, IAtom a2) { 
-		if ((a1.getProperty("rank").toString()).compareTo(a2.getProperty("rank").toString()) < 0)
-			return -1;
-		else 
-			return 1;
 	} 
 }
 

@@ -90,6 +90,14 @@
                             <source>${jdk.version}</source>
                             <target>${jdk.version}</target>
                             <showDeprecation>true</showDeprecation>
+                            <excludes>
+                                <!-- not a test class -->
+                                <exclude>com.nih.main.TestDecoder.java</exclude>
+                                <exclude>com.nih.main.TestEncoder.java</exclude>
+                                <exclude>com.nih.main.TestMapping.java</exclude>
+                                <exclude>com.nih.main.TestTransformer.java</exclude>
+                                <exclude>com.nih.mapping.Mapping.java</exclude>
+                            </excludes>
                         </configuration>
                     </plugin>
 
@@ -109,7 +117,14 @@
                                     <mainClass>com.nih.main.Main</mainClass>
                                 </manifest>
                             </archive>
-						<excludes>com.nih.main.Test.class</excludes>
+							<excludes>
+                                <!-- not a test class -->
+                                <exclude>com.nih.main.TestDecoder.java</exclude>
+                                <exclude>com.nih.main.TestEncoder.java</exclude>
+                                <exclude>com.nih.main.TestMapping.java</exclude>
+                                <exclude>com.nih.main.TestTransformer.java</exclude>
+                                <exclude>com.nih.mapping.Mapping.java</exclude>
+                            </excludes>
                         </configuration>
                         <executions>
                             <execution>
@@ -150,6 +165,14 @@
                             <source>${jdk.version}</source>
                             <target>${jdk.version}</target>
                             <showDeprecation>true</showDeprecation>
+                            <excludes>
+                                <!-- not a test class -->
+                                <exclude>com.nih.main.TestDecoder.java</exclude>
+                                <exclude>com.nih.main.TestEncoder.java</exclude>
+                                <exclude>com.nih.main.TestMapping.java</exclude>
+                                <exclude>com.nih.main.TestTransformer.java</exclude>
+                                <exclude>com.nih.mapping.Mapping.java</exclude>
+                            </excludes>
                         </configuration>
                     </plugin>
 
@@ -169,7 +192,14 @@
                                     <mainClass>com.nih.main.Main</mainClass>
                                 </manifest>
                             </archive>
-
+							<excludes>
+                                <!-- not a test class -->
+                                <exclude>com.nih.main.TestDecoder.java</exclude>
+                                <exclude>com.nih.main.TestEncoder.java</exclude>
+                                <exclude>com.nih.main.TestMapping.java</exclude>
+                                <exclude>com.nih.main.TestTransformer.java</exclude>
+                                <exclude>com.nih.mapping.Mapping.java</exclude>
+                            </excludes>
                         </configuration>
                         <executions>
                             <execution>

@@ -197,7 +197,7 @@ public class TestEncoder {
 				encoder.setRepetition(true);
 				encoder.setStereochemistry(true);
 					//make reactionCode
-					Map<String,String> reactionCodeMap = encoder.makeReactionCode(reactionCenterAtom, reactants, 
+					Map<String,String> reactionCodeMap = encoder.generateReactionCode(reactionCenterAtom, reactants, 
 							pseudoMolecule, numberOfRepetitions);
 					//String reactionCode = ReactionCode.reactionCodeMapToStringMultiLines(reactionCodeMap);
 					String reactionCode = encoder.reactionCodeMapToStringOneLine(reactionCodeMap);
