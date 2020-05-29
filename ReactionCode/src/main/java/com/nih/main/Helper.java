@@ -65,11 +65,11 @@ class Helper {
 
         sb.append("Reference");
         sb.append(NEW_LINE);
-        sb.append("(Authors)");
+        sb.append("Victorien Delannée and Marc Nicklaus");
         sb.append(NEW_LINE);
-        sb.append("Title");
+        sb.append("ReactionCode: a new versatile format for searching, analysis, classification, transform, and encoding/decoding of reactions");
         sb.append(NEW_LINE);
-        sb.append("doi: TBD");
+        sb.append("doi: 10.26434/chemrxiv.12058971");
         sb.append(NEW_LINE);
         sb.append("**************************************************");
         sb.append(NEW_LINE);
@@ -165,14 +165,14 @@ class Helper {
         sb.append(NEW_LINE);
         sb.append("java -jar ReactionCode-1.0.0.jar -q reaction.rdf");
         sb.append(NEW_LINE);
-        sb.append("java -jar ReactionCode-1.0.0.jar -q \"[CH3:1][Si:4]([Cl:3])([CH3:6])[CH3:8].[CH2:2]([C:5]=1[CH:11]=[C:13]([NH2:15])[CH:16]=[CH:14][CH:12]1)[C:7](=[O:9])[OH:10]>>[CH2:1]([CH:2]([C:5]=1[CH:11]=[C:13]([NH2:15])[CH:16]=[CH:14][CH:12]1)[C:7](=[O:9])[OH:10]).[Cl:3]\"");
+        sb.append("java -jar ReactionCode-1.0.0.jar -q \"[cH2:1]1([Br:21])[cH2:2][cH2:3][cH:4]([cH2:5][cH2:6]1)[cH:7]2[cH2:8][cH2:9][cH2:10]([Br:22])[cH2:11][cH2:12]2.[NH2:13][cH:14]3[cH2:15][cH2:16][cH2:17][cH:18]([cH2:19]3)[CH3:20]>>[cH2:1]1([NH2:13][cH:14]3[cH2:15][cH2:16][cH2:17][cH:18]([cH2:19]3)[CH3:20])[cH2:2][cH2:3][cH:4]([cH2:5][cH2:6]1)[cH:7]2[cH2:8][cH2:9][cH2:10]([NH2:13][cH:14]3[cH2:15][cH2:16][cH2:17][cH:18]([cH2:19]3)[CH3:20])[cH2:11][cH2:12]2\"");
         sb.append(NEW_LINE);
         sb.append(NEW_LINE);
         sb.append("Decoder examples: ");
         sb.append(NEW_LINE);
         sb.append("java -jar ReactionCode-1.0.0.jar -q reactionCodes.txt -r -s");
         sb.append(NEW_LINE);
-        sb.append("java -jar ReactionCode-1.0.0.jar -q \"0:906()[1]711()[1]70E(10GH)[1]706(10GI01GG)[1]|1:006(11GG)[1]006(11GG)[1]|2:008(22GL)[1]008(11GL)[1]006(99GK)[1]006(99GK)[1]|3:006(99GP)[1]006(99GO)[1]|4:007(11GQ)[1]006(99GR99GQ)[1]|A:006(11GI)[1]006(11GI)[1]|\" -m -i -p \"decode\"");
+        sb.append("java -jar ReactionCode-1.0.0.jar -q \"0:90E()[1]908(01GG)[1]708(10GG)[1]506(21GH)[1]506(12GJ)[1]|1:006(11GJ)[1]006(11GG)[1]006(11GG)[1]006(11GG)[1]/i06II|2:008(11GM)[1]008(11GM)[1]006(22GL)[1]006(11GL)[1]006(11GM)[1]/c00HH/i00JJ02HH|3:006(11GS)[1]006(11GU11GR)[1]/s00210212|4:008(11GU)[1]006(11GV)[1]/s01640364|5:006(11GW)[1]006(22GX)[1]006(11GX)[1]|A:010(11GI)[1]|B:008(2200)[1]008(2200)[1]006(1100)[1]|C:009(1103)[1]009(1103)[1]009(1103)[1]|\" -m -i -p \"decode\"");
         sb.append(NEW_LINE);
         sb.append(NEW_LINE);
         sb.append("Transformer example: ");

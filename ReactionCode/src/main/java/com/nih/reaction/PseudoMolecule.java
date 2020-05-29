@@ -14,6 +14,7 @@ import java.awt.Color;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -59,14 +60,16 @@ public class PseudoMolecule {
 	Set<IBond> bondOrderList = new HashSet<IBond>();
 	Set<IBond> bondStereoList = new HashSet<IBond>();
 	final Set<IAtom> reactionCenter = new HashSet<IAtom>();
-	Map<String,HashSet<IAtom>> indexAtomsPseudoMolecule = new HashMap<String,HashSet<IAtom>>();
+	HashMap<String, Integer> atomRepetitions = new HashMap<String, Integer>();
+	Map<String,LinkedHashSet<IAtom>> indexAtomsPseudoMol = new HashMap<String,LinkedHashSet<IAtom>>();
+	Map<String,LinkedHashSet<IAtom>> indexAtomsPseudoMolUnique = new HashMap<String,LinkedHashSet<IAtom>>();
 
-	Set<String> addedAtoms = new HashSet<String>();
-	Set<String> atomsInProducts = new HashSet<String>();
-	Set<String> addedBonds = new HashSet<String>();
+	Set<String> atomsInPseudoMol = new HashSet<String>();
+	Set<String> bondsInPseudoMol = new HashSet<String>();
 	Set<IAtom> leavingAtom = new HashSet<IAtom>();
 	Set<IBond> leavingBond = new HashSet<IBond>();
 
+	boolean repetitionToProcess = false;
 
 	/**
 	 * @param args
@@ -90,39 +93,37 @@ public class PseudoMolecule {
 		bondFormedList.clear();
 		bondCleavedList.clear();
 		reactionCenter.clear();
-		addedAtoms.clear();
-		atomsInProducts.clear();
-		addedBonds.clear();
-		indexAtomsPseudoMolecule.clear();	
-
-		Set<String> addedAtoms = new HashSet<String>();
+		atomsInPseudoMol.clear();
+		bondsInPseudoMol.clear();
+		atomRepetitions.clear();
+		indexAtomsPseudoMolUnique.clear();	
+		repetitionToProcess = false;
 
 		pseudoMolecule = DefaultChemObjectBuilder.getInstance().newAtomContainer();
 
 		leavingAtom = new HashSet<IAtom>();
 		leavingBond = new HashSet<IBond>();
-
+		
+		//build products atom index and manage potential repeated atoms
+		IAtomContainer temp = buildIndexInPseudoMolecule(products);
+		if (repetitionToProcess) 
+			duplicateAtomManagement(temp);
 
 		for (IAtomContainer product : products.atomContainers()) { 
 			for (IAtom a : product.atoms()) {
-				//Parameterize and add atom in pseudoMolecule if it is not added
-				if (!addedAtoms.contains(a.getID())) {
-					addAtomInPseudoMolecule(a, 0);
-					atomsInProducts.add(a.getID());
-				}
+				addAtomInPseudoMolecule(indexAtomsPseudoMolUnique.get(a.getID()).iterator().next(), 0);
 			}
 			for (IBond b : product.bonds()) {
-				// Parameterize and add change bond Information
-				addBondInPseudoMolecule(b, 0);
+					// Parameterize and add change bond Information
+					addBondInPseudoMolecule(b, 0);
 			}
 		}
-
 		for (IAtomContainer reactant : reactants.atomContainers()) { 
 
 			for (IAtom a : reactant.atoms()) {
 				//pseudoMolecule.addAtom(reactant.getAtom(j));
 				//indexAtomsReactants.put(reactant.getAtom(j).getID(),reactant.getAtom(j));
-				if (indexAtomsPseudoMolecule.containsKey(a.getID()) == false) {
+				if (indexAtomsPseudoMolUnique.containsKey(a.getID()) == false) {
 					addAtomInPseudoMolecule(a, 1);
 				}
 
@@ -137,38 +138,41 @@ public class PseudoMolecule {
 
 		return cleanMolecule(pseudoMolecule);
 	}
-	
 
 	private void addAtomInPseudoMolecule(IAtom atom, int leaving) {
-		pseudoMolecule.addAtom(atom);
+		if (!atomsInPseudoMol.contains(atom.getID())) {
+			pseudoMolecule.addAtom(atom);
+			atomsInPseudoMol.add(atom.getID());
+			
+			//need to add missing atom in indexAtomsPseudoMol (= atoms in reactants but no in products)
+			if (indexAtomsPseudoMolUnique.get(atom.getID()) == null) {
+				repetitionToProcess = true;
+				LinkedHashSet<IAtom> t = new LinkedHashSet<IAtom>();
+				t.add(atom);
+				indexAtomsPseudoMolUnique.put(atom.getID(), t);
+				indexAtomsPseudoMol.put(atom.getID(), t);
+			}
 
-		//index Atom to identify if an atom is repetead in product
-		if (indexAtomsPseudoMolecule.get(atom.getID()) == null) {
-			HashSet<IAtom> t = new HashSet<IAtom>();
-			t.add(atom);
-			indexAtomsPseudoMolecule.put(atom.getID(),t);
+			if (leaving == 1)
+				leavingAtom.add(atom);
 		}
-		else {
-			HashSet<IAtom> t = indexAtomsPseudoMolecule.get(atom.getID());
-			t.add(atom);
-			indexAtomsPseudoMolecule.put(atom.getID(),t);
-		}
-		addedAtoms.add(atom.getID());
-
-		if (leaving == 1)
-			leavingAtom.add(atom);
 	}
 
 	private void addBondInPseudoMolecule(IBond bond, int leaving) {
-		if (!addedBonds.contains(bond.getID())) {
-			addedBonds.add(bond.getID());
+		if (!bondsInPseudoMol.contains(bond.getID())) {
+			bondsInPseudoMol.add(bond.getID());
 			if (leaving == 1) {
 				bond = formatBond(bond);
 				leavingBond.add(bond);
 				pseudoMolecule.addBond(bond);
 			}
 			else {
-				pseudoMolecule.addBond(bond);
+				if (repetitionToProcess){
+					bond = formatBond(bond);
+					pseudoMolecule.addBond(bond);
+				}
+				else
+					pseudoMolecule.addBond(bond);
 			}
 			//at least one atom has to be in product to be consider as a reaction centre
 			if (bond.getProperty(BOND_CHANGE_INFORMATION) != null) {
@@ -180,8 +184,8 @@ public class PseudoMolecule {
 					bondOrderList.add(bond);
 				//set first index atom to avoid multiple atom with the same ID in the pseudoMolecule (same reactant interacts multiple times)
 				if (bond.getProperty(BOND_CHANGE_INFORMATION) != null) {
-					bond.setAtom(indexAtomsPseudoMolecule.get(bond.getAtom(0).getID()).iterator().next(), 0);
-					bond.setAtom(indexAtomsPseudoMolecule.get(bond.getAtom(1).getID()).iterator().next(), 1);
+					bond.setAtom(indexAtomsPseudoMolUnique.get(bond.getAtom(0).getID()).iterator().next(), 0);
+					bond.setAtom(indexAtomsPseudoMolUnique.get(bond.getAtom(1).getID()).iterator().next(), 1);
 				}
 				if (bond.getProperty(BOND_CHANGE_INFORMATION) != null) {
 					bond.getAtom(0).setProperty(additionalConstants.REACTION_CENTER, true);
@@ -199,8 +203,8 @@ public class PseudoMolecule {
 
 	private IBond formatBond(IBond bond) {
 		IBond newBond = new Bond();
-		newBond.setAtom(indexAtomsPseudoMolecule.get(bond.getAtom(0).getID()).iterator().next(), 0);
-		newBond.setAtom(indexAtomsPseudoMolecule.get(bond.getAtom(1).getID()).iterator().next(), 1);
+		newBond.setAtom(indexAtomsPseudoMolUnique.get(bond.getAtom(0).getID()).iterator().next(), 0);
+		newBond.setAtom(indexAtomsPseudoMolUnique.get(bond.getAtom(1).getID()).iterator().next(), 1);
 		newBond.setElectronCount(bond.getElectronCount());
 		newBond.setID(bond.getID());
 		newBond.setFlags(bond.getFlags());
@@ -215,7 +219,7 @@ public class PseudoMolecule {
 
 	public HashMap<String, Integer> atomRepetition() {
 		HashMap<String, Integer> numberOfRepetitions = new HashMap<String, Integer>();
-		for (Entry<String, HashSet<IAtom>> set : indexAtomsPseudoMolecule.entrySet()) {
+		for (Entry<String, LinkedHashSet<IAtom>> set : indexAtomsPseudoMol.entrySet()) {
 			numberOfRepetitions.put(set.getKey(), set.getValue().size());
 		}
 
@@ -257,11 +261,9 @@ public class PseudoMolecule {
 		IAtomContainer products =  reaction.getProducts().getAtomContainer(0);
 
 
-		for (int i = 0; i < reaction.getProducts().getAtomContainerCount(); i++) {
+		for (int i = 1; i < reaction.getProducts().getAtomContainerCount(); i++) {
 			IAtomContainer ac = reaction.getProducts().getAtomContainer(i);
-
-			if (i > 0)
-				products.add(ac);
+			products.add(ac);
 		}
 		
 		//reference atoms index
@@ -271,6 +273,7 @@ public class PseudoMolecule {
 		//reference bonds index
 		for (int j = 0; j < products.getBondCount(); j++) {
 			IBond bond = products.getBond(j);
+			System.out.println(bond.getID());
 			indexBondsInProducts.put(bond.getID(), j);
 		}
 
@@ -718,6 +721,85 @@ public class PseudoMolecule {
 		}
 	}
 	
+	
+
+	/**
+	 * Use atom in products to build an index. If an atom is repeated (multiple atoms with the same atom atom mapping)
+	 * , repetitionToProcess is set true and duplicate atom will be deleted to avoid duplicate in the pseudoMolecules
+	 * ex: 2A + 1B -> 2AB  The molecule A is to time in the product and has to be considered as the same molecule repeated 2 times
+	 * (cf SI figure Stoichiometry management in publication)
+	 * @param atom
+	 */
+	private IAtomContainer buildIndexInPseudoMolecule(IAtomContainerSet set) {
+		IAtomContainer aggregate = DefaultChemObjectBuilder.getInstance().newAtomContainer();
+		for (IAtomContainer ac : set.atomContainers()) {
+			aggregate.add(ac);
+			for (IAtom atom : ac.atoms()) {
+				// index Atom to identify if an atom is repeated in product 
+				if (indexAtomsPseudoMolUnique.get(atom.getID()) == null) {
+					repetitionToProcess = true;
+					LinkedHashSet<IAtom> t = new LinkedHashSet<IAtom>();
+					t.add(atom);
+					indexAtomsPseudoMolUnique.put(atom.getID(), t);
+				} else {
+					LinkedHashSet<IAtom> t = indexAtomsPseudoMolUnique.get(atom.getID());
+					t.add(atom);
+					indexAtomsPseudoMolUnique.put(atom.getID(), t);
+				}
+			}
+		}
+		indexAtomsPseudoMol = new HashMap<String,LinkedHashSet<IAtom>>(indexAtomsPseudoMolUnique);
+		return aggregate;
+	}
+	
+	/**
+	 * Remove smartly duplicate atoms. A BFS is looking for neighbors in order to keep a whole fragment
+	 */
+	private void duplicateAtomManagement(IAtomContainer ac) {
+		for (Entry<String,LinkedHashSet<IAtom>> e : indexAtomsPseudoMol.entrySet()) {
+			String id = e.getKey();
+			LinkedHashSet<IAtom> atoms = indexAtomsPseudoMolUnique.get(id);
+			if (atoms.size() > 1) {
+				Set<IAtom> sphere = new HashSet<IAtom>();
+				sphere.add(atoms.iterator().next());
+				List<IAtom> selected  = getAllConnectedDuplicateAtoms(sphere, ac, 
+						new ArrayList<IAtom>(), new HashSet<IAtom>());
+				selected.add(atoms.iterator().next());
+				//define the atoms in selected as the reference atoms to be kept
+				for (IAtom atom : selected) {
+					LinkedHashSet<IAtom> temp = new LinkedHashSet<IAtom>();
+					temp.add(atom);
+					indexAtomsPseudoMolUnique.put(atom.getID(), temp);
+				}
+			}
+		}
+	}
+	
+	private List<IAtom> getAllConnectedDuplicateAtoms(Set<IAtom> sphere, IAtomContainer atomContainer, 
+			List<IAtom> atomList, Set<IAtom> visited) {
+		IAtom nextAtom;
+		Set<IAtom> newSphere = new HashSet<IAtom>();
+
+		for (IAtom atom : sphere) {
+			List<IBond> connectedBonds = atomContainer.getConnectedBondsList(atom);
+			for (IBond bond : connectedBonds) {
+				nextAtom = bond.getOther(atom);
+				//only add non visited and duplicate atoms
+				if (!visited.contains(nextAtom)) {
+					if (!sphere.contains(nextAtom)  && indexAtomsPseudoMolUnique.get(nextAtom.getID()).size() > 1) {
+						newSphere.add(nextAtom);
+						if (!atomList.contains(nextAtom)) atomList.add(nextAtom);
+					}
+					visited.add(nextAtom);
+				}
+			}
+		}
+		if (newSphere.size() > 0) {
+			getAllConnectedDuplicateAtoms(newSphere, atomContainer, atomList, visited);
+		}
+		return atomList;
+	}
+	
 	/**
 	 * @param name
 	 * @param newPseudoMolecule
@@ -781,15 +863,15 @@ public class PseudoMolecule {
 	/**
 	 * @return
 	 */
-	public Map<String, HashSet<IAtom>> getIndexAtomsPseudoMolecule() {
-		return indexAtomsPseudoMolecule;
+	public Map<String, LinkedHashSet<IAtom>> getIndexAtomsPseudoMolecule() {
+		return indexAtomsPseudoMolUnique;
 	}
 
 	/**
 	 * @param indexAtomsPseudoMolecule
 	 */
-	public void setIndexAtomsPseudoMolecule(HashMap<String, HashSet<IAtom>> indexAtomsPseudoMolecule) {
-		this.indexAtomsPseudoMolecule = indexAtomsPseudoMolecule;
+	public void setIndexAtomsPseudoMolecule(HashMap<String, LinkedHashSet<IAtom>> indexAtomsPseudoMolecule) {
+		this.indexAtomsPseudoMolUnique = indexAtomsPseudoMolecule;
 	}
 
 

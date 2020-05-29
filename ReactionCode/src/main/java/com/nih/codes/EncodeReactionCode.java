@@ -49,6 +49,9 @@ public class EncodeReactionCode {
 	private boolean charge = true;
 	private boolean bondType = true;
 	private boolean repetition = true;
+	
+	private Map<Integer, Set<IAtom>> codeLayers; 
+	private List<IAtom> conflictedAtoms;
 
 	/**
 	 * @param args
@@ -85,18 +88,23 @@ public class EncodeReactionCode {
 		//generate index
 		Map<String, IAtom> indexAtomReactants = indexAtomIAtomContainerSet(reactants);
 		Map<String, IBond> indexBondReactants = indexAtomIBondContainerSet(reactants);
-		reinitializedConstants(pseudoMolecule);
+		reinitializedVisitedConstants(pseudoMolecule);
 
-		Map<Integer, Set<IAtom>> sphereList = new HashMap<Integer, Set<IAtom>>();
-		sphereList.put(0, atomInRC);
-		generateAllAtomAndBondCodes(atomInRC, indexAtomReactants, indexBondReactants, pseudoMolecule, sphereList, 
+		//generate all individual atom and bonds code
+		codeLayers = new LinkedHashMap<Integer, Set<IAtom>>();
+		codeLayers.put(0, atomInRC);
+		generateAllAtomAndBondCodes(atomInRC, indexAtomReactants, indexBondReactants, pseudoMolecule, codeLayers, 
 				new ArrayList<IAtom>(), 1, pseudoMolecule.getAtomCount());
 		
+		//find the roots (atom(s) with the highest score in the RC)
 		List<IAtom> sortedAtomInRC = new ArrayList<IAtom>(atomInRC);
-
 		Collections.sort(sortedAtomInRC, new CompareByAtomCode());
 		List<IAtom> roots = getRootAtoms(sortedAtomInRC);
-		for (IAtom root : roots) {
+		
+		//generate reactionCode for all potential roots and keep the one with the highest priority 
+		//cf publication SI conflict solver algorithm
+		/*for (IAtom root : roots) {
+			System.out.println("code "+root.getProperties());
 			//reset Properties define to rank atoms
 			resetRankingProperties();
 			List<IAtom> sphere = new ArrayList<IAtom>();
@@ -108,15 +116,15 @@ public class EncodeReactionCode {
 //			}
 			sphere.add(root);
 			rankedAtomsInReactionCentre(new HashSet<IAtom>(sphere), new ArrayList<IAtom>(), 
-					new ArrayList<IAtom>(sphereList.get(0)), 0, mol.getAtomCount());
+					new ArrayList<IAtom>(codeLayers.get(0)), 0, mol.getAtomCount());
 
 			sphere = new ArrayList<IAtom>();
-			sphere.addAll(sphereList.get(0));
+			sphere.addAll(codeLayers.get(0));
 			
 			rankedAtomsOutsideReactionCentre(new HashSet<IAtom>(sphere), new ArrayList<IAtom>(), 0, 
 					mol.getAtomCount()-sphere.size());
-			
-			Map<String,String> result = generate(sphereList, numberOfRepetitions);
+			//System.out.println(sphereList.keySet());
+			Map<String,String> result = generate(codeLayers, numberOfRepetitions);
 			String newReactionCode = reactionCodeMapToStringOneLine(result);
 //			System.out.println("newMCode " +newMCode);
 			if (reactionCode == null) {
@@ -129,11 +137,758 @@ public class EncodeReactionCode {
 					reactionCodeMap = result;
 				}
 			}
-		}
-		return reactionCodeMap;
+		}*/
+		return selectReactionCode(pseudoMolecule, codeLayers, numberOfRepetitions);
+		//return reactionCodeMap;
 	}
 
 
+	/**
+	 * @param codeLayers
+	 */
+	private Map<String,String> selectReactionCode(IAtomContainer pseudoMol, Map<Integer, Set<IAtom>> codeLayers,
+			Map<String, Integer> numberOfRepetitions) {
+		int position = 1;
+		for (Entry<Integer, Set<IAtom>> e : codeLayers.entrySet()) {
+			int depth = e.getKey();
+			List<IAtom> sortedAtomsByAtomCode = new ArrayList<IAtom>(e.getValue());
+			List<IAtom> sortedAtomsByABCode = new ArrayList<IAtom>(e.getValue());
+			Collections.sort(sortedAtomsByAtomCode, new CompareByAtomCode());
+			Collections.sort(sortedAtomsByABCode, new CompareByABCode());
+			
+			for (int i = 0; i < sortedAtomsByAtomCode.size(); i++) {
+				conflictedAtoms = new ArrayList<IAtom>();
+				IAtom atom1 = sortedAtomsByAtomCode.get(i);
+				System.out.println(atom1.getProperty("code2") + " " + atom1.getProperty("position") + " " + position);
+				if (atom1.getProperty("position") != null)
+					continue;
+				conflictedAtoms.add(atom1);
+				String atomCode1 = atom1.getProperty("code2");
+				for (int j = i+1; j < sortedAtomsByAtomCode.size(); j++) {
+					IAtom atom2 = sortedAtomsByAtomCode.get(j);
+					String atomCode2 = atom2.getProperty("code2");
+					if (atomCode1.equals(atomCode2))
+						conflictedAtoms.add(atom2);
+					else
+						break;
+				}
+				int nbOfConflicts = conflictedAtoms.size();
+				System.out.println("depth "+ depth + " / " + codeLayers.size() + " " + i + " " + sortedAtomsByAtomCode.size() + " nb conf " + conflictedAtoms.size() + " pos " + position);
+				conflictSolver(pseudoMol, depth, position);
+				position += nbOfConflicts;
+			}
+		}
+		return generate2(codeLayers, numberOfRepetitions);
+	}
+	
+	private boolean conflictSolver(IAtomContainer pseudoMol, int depth, int position) {
+		int size = conflictedAtoms.size();
+		if (size > 1) {
+			System.out.println(" PREVIOUS ");
+			if (depth != 0) {
+				//use previous layer
+				if (previousLayerSolver(position))
+					return true;
+				else
+					removeSolvedConflictedAtom();
+			}
+			else {
+				//initialize position
+				int tempPos = position + size - 1;
+				for (IAtom a : conflictedAtoms) {
+					System.out.println(" tempPos pos " + tempPos);
+					a.setProperty("position", tempPos);
+				}
+			}
+			System.out.println(" BONDS ");
+			if (connectedBondsSolver())
+				return true;
+			else
+				removeSolvedConflictedAtom();
+			System.out.println(" CURRENT ");
+			if (currentLayerSolver(position, pseudoMol))
+				return true;
+			else
+				removeSolvedConflictedAtom();
+			System.out.println(" NEXT ");
+			if (nextLayersSolver(pseudoMol))
+				return true;
+			//Symmetry, it does not matter. The order will not change the position. A position is attributed
+			else {
+				System.out.println(" SYMMETRY ");
+				removeSolvedConflictedAtom();
+				forceSolvedConflictedAtom();
+			}
+		}
+		else {
+			conflictedAtoms.get(0).setProperty("position", position);
+			return true;
+		}
+		return false;
+	}
+	
+	private void forceSolvedConflictedAtom() {
+		List<IAtom> temp = new ArrayList<IAtom>();
+		Collections.sort(conflictedAtoms, new CompareByPosition());
+		int currentPosition = -1;
+		for (IAtom a : conflictedAtoms) {
+			if (currentPosition == -1) {
+				currentPosition = (int)a.getProperty("position");
+				temp.add(a);
+			}
+			else {
+				int nextAtomPos = (int)a.getProperty("position");
+				if (currentPosition == nextAtomPos) {
+					temp.add(a);
+				}
+				//attribute position for all atoms in temp 
+				if (currentPosition != nextAtomPos || temp.size() == conflictedAtoms.size()) {
+					int size = temp.size();
+					for (int i = size-1; i > -1; i--) {
+						IAtom tatom = temp.get(i);
+						int newPosition = (int) tatom.getProperty("position") - (size - i - 1);
+						System.out.println(" new pos " + newPosition + " old " + tatom.getProperty("position"));
+						tatom.setProperty("hasUniquePosition",true);
+						tatom.setProperty("position",newPosition);
+					}
+					temp.clear();
+				}
+				else   {
+					temp.add(a);
+				}
+				currentPosition = nextAtomPos;
+			}
+		}
+		conflictedAtoms.clear();
+	}
+	/**
+	 * Attribute a unique position
+	 */
+	private void removeSolvedConflictedAtom() {
+		List<IAtom> newConflictedAtoms = new ArrayList<IAtom>();
+		for (IAtom a : conflictedAtoms) {
+			if ((boolean)a.getProperty("hasUniquePosition") == false) {
+				newConflictedAtoms.add(a);
+			}
+		}
+		conflictedAtoms = newConflictedAtoms;
+	}
+	
+	private boolean previousLayerSolver(int position) {
+		boolean success = true;
+		//sorted connection in previous layers
+		for (int i = 0; i < conflictedAtoms.size(); i++) {
+			int position2 = position + conflictedAtoms.size() - 1;
+			IAtom atom1 = conflictedAtoms.get(i);
+			atom1.setProperty("hasUniquePosition", true);
+			List<IAtom> connectedAtomInPreviousLayerList1 = atom1.getProperty("connectedAtomInPreviousLayerList");
+			List<Integer> priorities1 = new ArrayList<Integer>();
+			for (IAtom a : connectedAtomInPreviousLayerList1) {
+				priorities1.add(a.getProperty("position"));
+			}
+			Collections.sort(priorities1);
+			for (int j = 0; j < conflictedAtoms.size(); j++) {
+				if (i == j) {
+					continue;
+				}
+				IAtom atom2 = conflictedAtoms.get(j);
+				List<Integer> priorities2;
+				if (atom2.getProperty("priorities") != null) {
+					priorities2 = atom2.getProperty("priorities");
+				}
+				else {
+					priorities2 = new ArrayList<Integer>();
+					List<IAtom> connectedAtomInPreviousLayerList2 = atom2.getProperty("connectedAtomInPreviousLayerList");
+					for (IAtom a : connectedAtomInPreviousLayerList2) {
+						priorities2.add(a.getProperty("position"));
+					}
+					Collections.sort(priorities2);
+					atom2.setProperty("priorities",priorities2);
+				}
+				
+				//assign a priority based on priorities lists
+				//connected to the same atoms in the previous layer
+				if (priorities1.equals(priorities2)) {
+					success = false;
+					atom1.setProperty("hasUniquePosition", false);
+				}
+				else {
+					if (priorities2.size() > priorities1.size()) {
+						for (int a = 0; a < priorities2.size(); a++) {
+							if (a < priorities1.size()){
+								if (priorities1.get(a) < priorities2.get(a)) {
+									position2--;
+									break;
+								}
+							}
+						}
+					}
+					else {
+						for (int a = 0; a < priorities1.size(); a++) {
+							if (a < priorities2.size()) {
+								if (priorities1.get(a) < priorities2.get(a)) {
+									position2--;
+									break;
+								}
+							}
+							//it means that atom 1 has one more connection with the previous layer and other connections are the same than atom 2
+							else {
+								position2--;
+								break;
+							}
+						}
+					}
+				}
+			}
+			atom1.setProperty("position", position2);
+		}
+		return success;
+	}
+
+	private boolean currentLayerSolver(int position, IAtomContainer pseudoMol) {
+		boolean success = true;
+		//sorted connection in previous layers
+		for (int i = 0; i < conflictedAtoms.size(); i++) {
+			int position2 = position + conflictedAtoms.size() - 1;
+			IAtom atom1 = conflictedAtoms.get(i);
+			atom1.setProperty("hasUniquePosition", true);
+			int currentDepth = atom1.getProperty("depth");
+			List<IAtom> connectedAtomPresentInCurrentLayer1 = 
+					getConnectedAtomPresentInCurrentLayer(currentDepth, pseudoMol.getConnectedAtomsList(atom1));
+			List<Integer> priorities1 = new ArrayList<Integer>();
+			for (IAtom a : connectedAtomPresentInCurrentLayer1) {
+				if (a.getProperty("position") != null)
+					priorities1.add(a.getProperty("position"));
+			}
+			Collections.sort(priorities1);
+			for (int j = 0; j < conflictedAtoms.size(); j++) {
+				if (i == j) {
+					continue;
+				}
+				IAtom atom2 = conflictedAtoms.get(j);
+				List<Integer> priorities2;
+				if (atom2.getProperty("priorities") != null) {
+					priorities2 = atom2.getProperty("priorities");
+				}
+				else {
+					priorities2 = new ArrayList<Integer>();
+					List<IAtom> connectedAtomPresentInCurrentLayer2 = 
+							getConnectedAtomPresentInCurrentLayer(currentDepth, pseudoMol.getConnectedAtomsList(atom2));
+					for (IAtom a : connectedAtomPresentInCurrentLayer2) {
+						if (a.getProperty("position") != null)
+							priorities2.add(a.getProperty("position"));
+					}
+					Collections.sort(priorities2);
+					atom2.setProperty("priorities",priorities2);
+				}
+				System.out.println(priorities1 + " " + priorities2);
+				//assign a priority based on priorities lists
+				//connected to the same atoms in the previous layer
+				if (priorities1.equals(priorities2)) {
+					success = false;
+					atom1.setProperty("hasUniquePosition", false);
+				}
+				else {
+					if (priorities2.size() > priorities1.size()) {
+						for (int a = 0; a < priorities2.size(); a++) {
+							if (a < priorities1.size()){
+								if (priorities1.get(a) < priorities2.get(a)) {
+									position2--;
+									break;
+								}
+							}
+						}
+					}
+					else {
+						for (int a = 0; a < priorities1.size(); a++) {
+							if (a < priorities2.size()) {
+								if (priorities1.get(a) < priorities2.get(a)) {
+									position2--;
+									break;
+								}
+							}
+							//it means that atom 1 has one more connection with the previous layer and other connections are the same than atom 2
+							else {
+								position2--;
+								break;
+							}
+						}
+					}
+				}
+			}
+			atom1.setProperty("position", position2);
+		}
+		return success;
+	}
+	
+	private boolean connectedBondsSolver() {
+		boolean success = true;
+		List<IAtom> sortedAtomsByABCode = new ArrayList<IAtom>(conflictedAtoms);
+		//Normally in sortedAtomsByABCode the first elt has the lowest position property and the last the higher position property
+		Collections.sort(sortedAtomsByABCode, new CompareByABCode());
+		int size = sortedAtomsByABCode.size();
+		//look by bonds codes
+		for (int i = 0; i < size; i++) {
+			IAtom atom1 = sortedAtomsByABCode.get(i);
+			String abCode1 = atom1.getProperty("abCode");
+			int currentPosition = (int) atom1.getProperty("position");
+			int newPosition = (int) atom1.getProperty("position");
+			atom1.setProperty("hasUniquePosition", true);
+			for (int j = 0; j < size; j++) {
+				if (i == j) 
+					continue;
+				IAtom atom2 = sortedAtomsByABCode.get(j);
+				String abCode2 = atom2.getProperty("abCode");
+				if (abCode1.equals(abCode2)) {
+					success = false;
+					atom1.setProperty("hasUniquePosition", false);
+				}
+				else {
+					System.out.println(abCode1 + " " + abCode2);
+					if (currentPosition == (int) atom2.getProperty("position"))
+						newPosition--;
+				}
+			}
+			atom1.setProperty("position", newPosition);
+		}
+		return success;
+	}
+	
+	private boolean nextLayersSolver(IAtomContainer pseudoMol) {
+		boolean success = true;
+		int size = conflictedAtoms.size();
+		//compare abCode of connected atoms in the next layers
+		for (int i = 0; i < size; i++) {
+			IAtom atom1 = conflictedAtoms.get(i);
+			atom1.setProperty("hasUniquePosition", true);
+			int currentDepth = atom1.getProperty("depth");
+			List<IAtom> connectedAtoms1 = getConnectedAtomPresentInNextLayer(currentDepth, 
+					pseudoMol.getConnectedAtomsList(atom1));
+			Collections.sort(connectedAtoms1, new CompareByABCode());
+			String abCode1 = "";
+			for (IAtom a : connectedAtoms1) {
+				abCode1 += a.getProperty("abCode");
+			}
+			int currentPosition = (int) atom1.getProperty("position");
+			int newPosition = (int) atom1.getProperty("position");
+			for (int j = 0; j < size; j++) {
+				if (i == j) 
+					continue;
+				IAtom atom2 = conflictedAtoms.get(j);
+				if (currentPosition == (int) atom2.getProperty("position")) {
+					List<IAtom> connectedAtoms2 = getConnectedAtomPresentInNextLayer(atom2.getProperty("depth"), 
+							pseudoMol.getConnectedAtomsList(atom2));
+					Collections.sort(connectedAtoms2, new CompareByABCode());
+					String abCode2 = "";
+					for (IAtom a : connectedAtoms2) {
+						abCode2 += a.getProperty("abCode");
+					}
+					if (abCode1.equals(abCode2)) {
+						int res = nextLayersSolver(pseudoMol, connectedAtoms1, connectedAtoms2, currentDepth);
+						//-9 is used when the next layers can't attribute a position (it's usually a symmetry)
+						if (res == -9) {
+							atom1.setProperty("hasUniquePosition", false);
+							success = false;
+						}
+						else {
+							newPosition = newPosition + res;
+						}
+					}
+					else {
+						if (currentPosition == (int) atom2.getProperty("position"))
+							newPosition--;
+					}
+				}
+				
+			}
+			atom1.setProperty("position", newPosition);
+		}
+		return success;
+	}
+	
+	private int nextLayersSolver(IAtomContainer pseudoMol, List<IAtom> l1, List<IAtom> l2, int depth) {
+		List<String> abCodes1 = new ArrayList<String>();
+		List<String> abCodes2= new ArrayList<String>();
+		List<IAtom> connectedAtoms1 = new ArrayList<IAtom>();
+		List<IAtom> connectedAtoms2 = new ArrayList<IAtom>();
+		for (IAtom a1 : l1) {
+			connectedAtoms1 = getConnectedAtomPresentInNextLayer(depth, 
+					pseudoMol.getConnectedAtomsList(a1));
+			for (IAtom ca : connectedAtoms1) {
+				abCodes1.add(ca.getProperty("abCode"));
+			}
+		}
+		for (IAtom a2 : l2) {
+			connectedAtoms2 = getConnectedAtomPresentInNextLayer(depth, 
+					pseudoMol.getConnectedAtomsList(a2));
+			for (IAtom ca : connectedAtoms2) {
+				abCodes2.add(ca.getProperty("abCode"));
+			}
+		}
+		Collections.sort(abCodes1, Collections.reverseOrder());
+		Collections.sort(abCodes2, Collections.reverseOrder());
+		if (abCodes1.equals(abCodes2) && !abCodes1.isEmpty()) {
+			return nextLayersSolver(pseudoMol, connectedAtoms1, connectedAtoms2, depth+1); 
+		}
+		else {
+			if (abCodes1.isEmpty() && !abCodes2.isEmpty()) {
+				return 0;
+			}
+			else if (!abCodes1.isEmpty() && abCodes2.isEmpty()) {
+				return -1;
+			}
+			else if (abCodes1.isEmpty() && abCodes2.isEmpty()) {
+				return -9;
+			}
+			else {
+				if (abCodes2.size() > abCodes1.size()) {
+					for (int i = 0; i < abCodes1.size(); i++) {
+						String abCode1 = abCodes1.get(i);
+						String abCode2 = abCodes2.get(i);
+						int compare = abCode1.compareTo(abCode2);
+						if (compare == 0)
+							continue;
+						else if (compare > 0)
+							return -1;
+						else
+							return 0;
+					}
+					return 0;
+				}
+				else {
+					for (int i = 0; i < abCodes2.size(); i++) {
+						String abCode1 = abCodes1.get(i);
+						String abCode2 = abCodes2.get(i);
+						int compare = abCode1.compareTo(abCode2);
+						if (compare == 0)
+							continue;
+						else if (compare > 0)
+							return -1;
+						else
+							return 0;
+					}
+					return -1;
+				}
+			}
+		}
+	}
+	
+	private List<IAtom> getConnectedAtomPresentInCurrentLayer(int depth, List<IAtom> connectedAtom) {
+		List<IAtom> connectedAtomsInNextLayer = new ArrayList<IAtom>();
+		for (IAtom a : connectedAtom) {
+			if ((int)a.getProperty("depth") == depth) 
+				connectedAtomsInNextLayer.add(a);
+		}
+		return connectedAtomsInNextLayer;
+	}
+	
+	private List<IAtom> getConnectedAtomPresentInNextLayer(int depth, List<IAtom> connectedAtom) {
+		List<IAtom> connectedAtomsInNextLayer = new ArrayList<IAtom>();
+		for (IAtom a : connectedAtom) {
+			if ((int)a.getProperty("depth") > depth) 
+				connectedAtomsInNextLayer.add(a);
+		}
+		return connectedAtomsInNextLayer;
+	}
+	
+	
+	/**
+	 * @param sphereList
+	 * @param numberOfRepetitions
+	 * @return
+	 */
+	private Map<String,String> generate2(Map<Integer, Set<IAtom>> sphereList, Map<String, Integer> numberOfRepetitions) {
+		Map<Integer,String> tempResult = new TreeMap<Integer,String>();
+		int leavingIndicator = sphereList.size()*2;
+		
+		Map<IAtom, Integer> positionsOfStayingAtoms = new HashMap<IAtom, Integer>();
+		Map<IAtom, Integer> positionsOfLeavingAtoms = new HashMap<IAtom, Integer>();
+		
+		for (Entry<Integer, Set<IAtom>> e : sphereList.entrySet()) {
+			StringBuilder stayingCodes = new StringBuilder();
+			StringBuilder leavingCodes = new StringBuilder();
+			String[] stayingComplementCodes = new String[3];
+			String[] leavingComplementCodes = new String[3];
+			
+			//initialize
+			stayingComplementCodes[0] = "";
+			stayingComplementCodes[1] = "";
+			stayingComplementCodes[2] = "";
+			leavingComplementCodes[0] = "";
+			leavingComplementCodes[1] = "";
+			leavingComplementCodes[2] = "";
+			
+			int depth = e.getKey();
+			List<IAtom> atoms = new ArrayList<IAtom>(e.getValue());
+			Collections.sort(atoms, new CompareByPosition());
+			List<IBond> bondToAdd = new ArrayList<IBond>();
+			
+			int cptStaying = 0;
+			int cptLeaving = 0;
+			for (IAtom atom : atoms) {
+				if (depth > 0) {
+					if (atom.getProperty(additionalConstants.LEAVING_ATOM) != null) {
+						positionsOfLeavingAtoms.put(atom, positionsOfLeavingAtoms.size());
+					}
+					else {
+						positionsOfStayingAtoms.put(atom, positionsOfStayingAtoms.size());
+					}
+				}
+				else {
+					positionsOfStayingAtoms.put(atom, positionsOfStayingAtoms.size());
+				}
+				List<IBond> bonds = mol.getConnectedBondsList(atom);
+				for (IBond b : bonds) {
+					IAtom other = b.getOther(atom);
+					if (positionsOfStayingAtoms.containsKey(other) || positionsOfLeavingAtoms.containsKey(other)) {
+						bondToAdd.add(b);
+					}
+				}
+				StringBuilder code = new StringBuilder();
+				//add atom
+				String[] atomCode = atom.getProperty("code").toString().split("_")[0].split("/");
+
+				String atomComplement = ""; 
+				if (atomCode.length > 1) {
+					atomComplement = atomCode[1];
+				}
+
+				code.append(atomCode[0]);
+				code.append("(");
+				
+				//add bonds
+				List<String> bondCodes = new ArrayList<String>();
+				for (IBond b : bondToAdd) {
+					String bondCode = b.getProperty("code").toString().split("_")[0] + "|";
+					String pos = "";
+					if (positionsOfStayingAtoms.get(b.getOther(atom)) != null) {
+						pos = connectionTableAlphabet.get(positionsOfStayingAtoms.get(b.getOther(atom)));
+					}
+					else if (positionsOfLeavingAtoms.get(b.getOther(atom)) != null) {
+						pos = String.format("%02X", positionsOfLeavingAtoms.get(b.getOther(atom)));
+					}
+					if (pos.length() > 0) {
+						bondCode += pos;
+						bondCodes.add(bondCode);
+					}
+					
+				}
+				Collections.sort(bondCodes, Collections.reverseOrder());
+				int cptBond = 0;
+				Map<Integer,String> bondComplements = new HashMap<Integer,String>();
+				for (String bCode : bondCodes) {
+					String[] codeAndConnections = bCode.split("\\|");
+					String bondCode = codeAndConnections[0];
+					String connections = "";
+					if (codeAndConnections.length > 1) {
+						connections = codeAndConnections[1];
+					}
+					String[] bondCodeWithComp = bondCode.split("/");
+					bondCode = bondCodeWithComp[0];
+					if (bondType == false) {
+						bondCode = "";
+					}
+					bondCode += connections;
+					if (bondCodeWithComp.length > 1) {
+						bondComplements.put(cptBond, bondCodeWithComp[1]);
+					}
+
+					code.append(bondCode);
+					cptBond++;
+				}
+				code.append(")");
+				if (repetition == true) {
+					code.append("["+numberOfRepetitions.get(atom.getID())+"]");
+				}
+				
+				if (depth > 0) {
+					if (atom.getProperty(additionalConstants.LEAVING_ATOM) != null) {
+						leavingCodes.append(code.toString());
+						
+						//add complementary information (stereo and charge)
+						String charges = leavingComplementCodes[0];
+						String stereo = leavingComplementCodes[1];
+						String isotopes = leavingComplementCodes[2];
+						if (atomComplement.length() > 0) {
+							if (atomComplement.contains("#")) {
+								int indexSymbol = atomComplement.indexOf("#");
+								isotopes += String.format("%02d", cptStaying) + atomComplement.substring(indexSymbol+1, indexSymbol+3);
+								atomComplement = atomComplement.substring(0, indexSymbol);
+							}
+							if (charge == true && stereochemistry == true && atomComplement.length() > 0) {
+								if (atomComplement.contains("@")) {
+									if (atomComplement.indexOf("@") > 0) {
+										charges += String.format("%02d", cptLeaving) + atomComplement.substring(0, 2);
+										stereo += String.format("%02d", cptLeaving) + atomComplement.substring(3);
+									}
+									else {
+										stereo += String.format("%02d", cptLeaving) + atomComplement.substring(1);
+									}
+								}
+								else {
+									charges += String.format("%02d", cptLeaving) + atomComplement.substring(0);
+
+								}
+							}
+							else if (charge == true && stereochemistry == false && atomComplement.length() > 0) {
+								charges += String.format("%02d", cptLeaving) + atomComplement;
+							}
+							else if (charge == false && stereochemistry == true && atomComplement.length() > 0) {
+								stereo += String.format("%02d", cptLeaving) + atomComplement;
+							}
+						}
+						//increment by 1 because 1 atom is added
+						cptLeaving++;
+						for (Entry<Integer,String> e2 : bondComplements.entrySet()) {
+							int index = e2.getKey() + cptLeaving;
+							stereo += String.format("%02d", index) + e2.getValue();
+						}
+						leavingComplementCodes[0] = charges;
+						leavingComplementCodes[1] = stereo;
+						leavingComplementCodes[2] = isotopes;
+						//increment with the number of bonds (corresponds to the position of the next atom)
+						cptLeaving = cptLeaving + cptBond;
+					}
+					else {
+						stayingCodes.append(code.toString());
+						
+						//add complementary information (stereo and charge)
+						String charges = stayingComplementCodes[0];
+						String stereo = stayingComplementCodes[1];
+						String isotopes = stayingComplementCodes[2];
+						if (atomComplement.length() > 0) {
+							if (atomComplement.contains("#")) {
+								int indexSymbol = atomComplement.indexOf("#");
+								isotopes += String.format("%02d", cptStaying) + atomComplement.substring(indexSymbol+1, indexSymbol+3);
+								atomComplement = atomComplement.substring(0, indexSymbol);
+							}
+							if (charge == true && stereochemistry == true && atomComplement.length() > 0) {
+								if (atomComplement.contains("@")) {
+									if (atomComplement.indexOf("@") > 0) {
+										charges += String.format("%02d", cptStaying) + atomComplement.substring(0, 2);
+										stereo += String.format("%02d", cptStaying) + atomComplement.substring(3);
+									}
+									else {
+										stereo += String.format("%02d", cptStaying) + atomComplement.substring(1);
+									}
+								}
+								else {
+									charges +=String.format("%02d",  cptStaying) + atomComplement.substring(0);
+
+								}
+							}
+							else if (charge == true && stereochemistry == false && atomComplement.length() > 0) {
+								charges += String.format("%02d", cptStaying) + atomComplement;
+							}
+							else if  (charge == false && stereochemistry == true && atomComplement.length() > 0) {
+								stereo += String.format("%02d", cptStaying) + atomComplement;
+							}
+						}
+						//increment by 1 because 1 atom is added
+						cptStaying++;
+						for (Entry<Integer,String> e2 : bondComplements.entrySet()) {
+							int index = e2.getKey() + cptStaying;
+							stereo += String.format("%02d", index) + e2.getValue();
+						}
+						stayingComplementCodes[0] = charges;
+						stayingComplementCodes[1] = stereo;
+						stayingComplementCodes[2] = isotopes;
+						//increment with the number of bonds (corresponds to the position of the next atom)
+						cptStaying = cptStaying + cptBond;
+					}
+				}
+				else {
+					stayingCodes.append(code.toString());
+					
+					//add complementary information (stereo and charge)
+					String charges = stayingComplementCodes[0];
+					String stereo = stayingComplementCodes[1];
+					String isotopes = stayingComplementCodes[2];
+					if (atomComplement.length() > 0) {
+						if (atomComplement.contains("#")) {
+							int indexSymbol = atomComplement.indexOf("#");
+							isotopes += String.format("%02d", cptStaying) + atomComplement.substring(indexSymbol+1, indexSymbol+3);
+							atomComplement = atomComplement.substring(0, indexSymbol);
+						}
+						if (charge == true && stereochemistry == true && atomComplement.length() > 0) {
+							if (atomComplement.contains("@")) {
+								if (atomComplement.indexOf("@") > 0) {
+									charges +=String.format("%02d",  cptStaying) + atomComplement.substring(0, 2);
+									stereo += String.format("%02d", cptStaying) + atomComplement.substring(3);
+								}
+								else {
+									stereo += String.format("%02d", cptStaying) + atomComplement.substring(3);
+								}
+							}
+							else {
+								charges += String.format("%02d", cptStaying) + atomComplement.substring(0);
+
+							}
+						}
+						else if (charge == true && stereochemistry == false && atomComplement.length() > 0) {
+							charges += String.format("%02d", cptStaying) + atomComplement;
+						}
+						else if  (charge == false && stereochemistry == true && atomComplement.length() > 0) {
+							stereo += String.format("%02d", cptStaying) + atomComplement.replace("@","");
+						}
+						
+					}
+					//increment by 1 because 1 atom is added
+					cptStaying++;
+					for (Entry<Integer,String> e2 : bondComplements.entrySet()) {
+						int index = e2.getKey() + cptStaying;
+						stereo += String.format("%02d", index) + e2.getValue();
+					}
+					stayingComplementCodes[0] = charges;
+					stayingComplementCodes[1] = stereo;
+					stayingComplementCodes[2] = isotopes;
+					//increment with the number of bonds (corresponds to the position of the next atom)
+					cptStaying = cptStaying + cptBond;
+				}
+			}
+			if (stayingCodes.length() > 0) {
+				if (stayingComplementCodes[0].length() > 0) {
+					stayingCodes.append("/c"+stayingComplementCodes[0]);
+				}
+				if (stayingComplementCodes[1].length() > 0) {
+					stayingCodes.append("/s"+stayingComplementCodes[1]);
+				}
+				if (stayingComplementCodes[2].length() > 0) {
+					stayingCodes.append("/i"+stayingComplementCodes[2]);
+				}
+				tempResult.put(depth, stayingCodes.toString());
+			}
+			if (leavingCodes.length() > 0) {
+				if (leavingComplementCodes[0].length() > 0) {
+					leavingCodes.append("/c"+leavingComplementCodes[0]);
+				}
+				if (leavingComplementCodes[1].length() > 0) {
+					leavingCodes.append("/s"+leavingComplementCodes[1]);
+				}
+				if (leavingComplementCodes[2].length() > 0) {
+					leavingCodes.append("/i"+leavingComplementCodes[2]);
+				}
+				tempResult.put(leavingIndicator+depth, leavingCodes.toString());
+
+			}
+		}
+		
+		//sort result by depth and group
+		Map<String,String> result = new LinkedHashMap<String,String>();
+		for (Entry<Integer,String> e : tempResult.entrySet()) {
+			int depth2 = e.getKey();
+			if (depth2 < leavingIndicator) {
+				result.put(String.valueOf(depth2), e.getValue());
+			}
+			else {
+				int newDepth = depth2 - leavingIndicator;
+				result.put(Character.toString((char) (64+newDepth)), e.getValue());
+			}
+		}
+		
+		return result;
+	}
+	
 	/**
 	 * @param sphereList
 	 * @param numberOfRepetitions
@@ -431,307 +1186,6 @@ public class EncodeReactionCode {
 		
 		return result;
 	}
-	
-	/**
-	 * @param sphereList
-	 * @param numberOfRepetitions
-	 * @return
-	 */
-	/*
-	private Map<String,String> generateOld(Map<Integer, Set<IAtom>> sphereList, Map<String, Integer> numberOfRepetitions) {
-
-		Map<Integer,String> tempResult = new TreeMap<Integer,String>();
-		int leavingIndicator = sphereList.size()*2;
-		
-		Map<IAtom, Integer> positionsOfStayingAtoms = new HashMap<IAtom, Integer>();
-		Map<IAtom, Integer> positionsOfLeavingAtoms = new HashMap<IAtom, Integer>();
-		
-		for (Entry<Integer, Set<IAtom>> e : sphereList.entrySet()) {
-			StringBuilder stayingCodes = new StringBuilder();
-			StringBuilder leavingCodes = new StringBuilder();
-			String[] stayingComplementCodes = new String[3];
-			String[] leavingComplementCodes = new String[3];
-			
-			//initialize
-			stayingComplementCodes[0] = "";
-			stayingComplementCodes[1] = "";
-			stayingComplementCodes[2] = "";
-			leavingComplementCodes[0] = "";
-			leavingComplementCodes[1] = "";
-			leavingComplementCodes[2] = "";
-			
-			int depth = e.getKey();
-			List<IAtom> atoms = new ArrayList<IAtom>(e.getValue());
-//			Collections.sort(atoms, new CompareByRank());
-			Collections.sort(atoms, new CompareByPriority());
-			List<IBond> bondToAdd = new ArrayList<IBond>();
-			
-			int cptStaying = 0;
-			int cptLeaving = 0;
-			for (IAtom atom : atoms) {
-				if (depth > 0) {
-					if (atom.getProperty(additionalConstants.LEAVING_ATOM) != null) {
-						positionsOfLeavingAtoms.put(atom, positionsOfLeavingAtoms.size());
-					}
-					else {
-						positionsOfStayingAtoms.put(atom, positionsOfStayingAtoms.size());
-					}
-				}
-				else {
-					positionsOfStayingAtoms.put(atom, positionsOfStayingAtoms.size());
-				}
-				List<IBond> bonds = mol.getConnectedBondsList(atom);
-				for (IBond b : bonds) {
-					IAtom other = b.getOther(atom);
-					if (positionsOfStayingAtoms.containsKey(other) || positionsOfLeavingAtoms.containsKey(other)) {
-						bondToAdd.add(b);
-					}
-				}
-				StringBuilder code = new StringBuilder();
-				//add atom
-				String[] atomCode = atom.getProperty("code").toString().split("_")[0].split("/");
-
-				String atomComplement = ""; 
-				if (atomCode.length > 1) {
-					atomComplement = atomCode[1];
-				}
-
-				code.append(atomCode[0]);
-				code.append("(");
-				
-				//add bonds
-				List<String> bondCodes = new ArrayList<String>();
-				for (IBond b : bondToAdd) {
-					String bondCode = b.getProperty("code").toString().split("_")[0] + "|";
-					String pos = "";
-					if (positionsOfStayingAtoms.get(b.getOther(atom)) != null) {
-						pos = connectionTableAlphabet.get(positionsOfStayingAtoms.get(b.getOther(atom)));
-					}
-					else if (positionsOfLeavingAtoms.get(b.getOther(atom)) != null) {
-						pos = String.format("%02X", positionsOfLeavingAtoms.get(b.getOther(atom)));
-					}
-					if (pos.length() > 0) {
-						bondCode += pos;
-						bondCodes.add(bondCode);
-					}
-					
-				}
-				Collections.sort(bondCodes, Collections.reverseOrder());
-				int cptBond = 0;
-				Map<Integer,String> bondComplements = new HashMap<Integer,String>();
-				for (String bCode : bondCodes) {
-					String[] codeAndConnections = bCode.split("\\|");
-					String bondCode = codeAndConnections[0];
-					String connections = "";
-					if (codeAndConnections.length > 1) {
-						connections = codeAndConnections[1];
-					}
-					String[] bondCodeWithComp = bondCode.split("/");
-					bondCode = bondCodeWithComp[0];
-					if (bondType == false) {
-						bondCode = "";
-					}
-					bondCode += connections;
-					if (bondCodeWithComp.length > 1) {
-						bondComplements.put(cptBond, bondCodeWithComp[1]);
-					}
-
-					code.append(bondCode);
-					cptBond++;
-				}
-				code.append(")");
-				if (repetition == true) {
-					code.append("["+numberOfRepetitions.get(atom.getID())+"]");
-				}
-				
-				if (depth > 0) {
-					if (atom.getProperty(additionalConstants.LEAVING_ATOM) != null) {
-						leavingCodes.append(code.toString());
-						
-						//add complementary information (stereo and charge)
-						String charges = leavingComplementCodes[0];
-						String stereo = leavingComplementCodes[1];
-						String isotopes = leavingComplementCodes[2];
-						if (atomComplement.length() > 0) {
-							if (atomComplement.contains("#")) {
-								int indexSymbol = atomComplement.indexOf("#");
-								isotopes += String.format("%02d", cptStaying) + "-" + atomComplement.substring(indexSymbol+1, indexSymbol+3) + ";";
-								atomComplement = atomComplement.substring(0, indexSymbol);
-							}
-							if (charge == true && stereochemistry == true && atomComplement.length() > 0) {
-								if (atomComplement.contains("@")) {
-									if (atomComplement.indexOf("@") > 0) {
-										charges += String.format("%02d", cptLeaving) + "-" + atomComplement.substring(0, 2) + ";";
-										stereo += String.format("%02d", cptLeaving) + "-" + atomComplement.substring(3) + ";";
-									}
-									else {
-										stereo += String.format("%02d", cptLeaving) + "-" + atomComplement.substring(1) + ";";
-									}
-								}
-								else {
-									charges += String.format("%02d", cptLeaving) + "-" + atomComplement.substring(0) + ";";
-
-								}
-							}
-							else if (charge == true && stereochemistry == false && atomComplement.length() > 0) {
-								charges += String.format("%02d", cptLeaving) + "-" + atomComplement + ";";
-							}
-							else if (charge == false && stereochemistry == true && atomComplement.length() > 0) {
-								stereo += String.format("%02d", cptLeaving) + "-" + atomComplement + ";";
-							}
-						}
-						//increment by 1 because 1 atom is added
-						cptLeaving++;
-						for (Entry<Integer,String> e2 : bondComplements.entrySet()) {
-							int index = e2.getKey() + cptLeaving;
-							stereo += String.format("%02d", index) + "-" + e2.getValue() + ";";
-						}
-						leavingComplementCodes[0] = charges;
-						leavingComplementCodes[1] = stereo;
-						leavingComplementCodes[2] = isotopes;
-						//increment with the number of bonds (corresponds to the position of the next atom)
-						cptLeaving = cptLeaving + cptBond;
-					}
-					else {
-						stayingCodes.append(code.toString());
-						
-						//add complementary information (stereo and charge)
-						String charges = stayingComplementCodes[0];
-						String stereo = stayingComplementCodes[1];
-						String isotopes = stayingComplementCodes[2];
-						if (atomComplement.length() > 0) {
-							if (atomComplement.contains("#")) {
-								int indexSymbol = atomComplement.indexOf("#");
-								isotopes += String.format("%02d", cptStaying) + "-" + atomComplement.substring(indexSymbol+1, indexSymbol+3) + ";";
-								atomComplement = atomComplement.substring(0, indexSymbol);
-							}
-							if (charge == true && stereochemistry == true && atomComplement.length() > 0) {
-								if (atomComplement.contains("@")) {
-									if (atomComplement.indexOf("@") > 0) {
-										charges += String.format("%02d", cptStaying) + "-" + atomComplement.substring(0, 2) + ";";
-										stereo += String.format("%02d", cptStaying) + "-" + atomComplement.substring(3) + ";";
-									}
-									else {
-										stereo += String.format("%02d", cptStaying) + "-" + atomComplement.substring(1) + ";";
-									}
-								}
-								else {
-									charges +=String.format("%02d",  cptStaying) + "-" + atomComplement.substring(0) + ";";
-
-								}
-							}
-							else if (charge == true && stereochemistry == false && atomComplement.length() > 0) {
-								charges += String.format("%02d", cptStaying) + "-" + atomComplement + ";";
-							}
-							else if  (charge == false && stereochemistry == true && atomComplement.length() > 0) {
-								stereo += String.format("%02d", cptStaying) + "-" + atomComplement + ";";
-							}
-						}
-						//increment by 1 because 1 atom is added
-						cptStaying++;
-						for (Entry<Integer,String> e2 : bondComplements.entrySet()) {
-							int index = e2.getKey() + cptStaying;
-							stereo += String.format("%02d", index) + "-" + e2.getValue() + ";";
-						}
-						stayingComplementCodes[0] = charges;
-						stayingComplementCodes[1] = stereo;
-						stayingComplementCodes[2] = isotopes;
-						//increment with the number of bonds (corresponds to the position of the next atom)
-						cptStaying = cptStaying + cptBond;
-					}
-				}
-				else {
-					stayingCodes.append(code.toString());
-					
-					//add complementary information (stereo and charge)
-					String charges = stayingComplementCodes[0];
-					String stereo = stayingComplementCodes[1];
-					String isotopes = stayingComplementCodes[2];
-					if (atomComplement.length() > 0) {
-						if (atomComplement.contains("#")) {
-							int indexSymbol = atomComplement.indexOf("#");
-							isotopes += String.format("%02d", cptStaying) + "-" + atomComplement.substring(indexSymbol+1, indexSymbol+3) + ";";
-							atomComplement = atomComplement.substring(0, indexSymbol);
-						}
-						if (charge == true && stereochemistry == true && atomComplement.length() > 0) {
-							if (atomComplement.contains("@")) {
-								if (atomComplement.indexOf("@") > 0) {
-									charges +=String.format("%02d",  cptStaying) + "-" + atomComplement.substring(0, 2) + ";";
-									stereo += String.format("%02d", cptStaying) + "-" + atomComplement.substring(3) + ";";
-								}
-								else {
-									stereo += String.format("%02d", cptStaying) + "-" + atomComplement.substring(3) + ";";
-								}
-							}
-							else {
-								charges += String.format("%02d", cptStaying) + "-" + atomComplement.substring(0) + ";";
-
-							}
-						}
-						else if (charge == true && stereochemistry == false && atomComplement.length() > 0) {
-							charges += String.format("%02d", cptStaying) + "-" + atomComplement + ";";
-						}
-						else if  (charge == false && stereochemistry == true && atomComplement.length() > 0) {
-							stereo += String.format("%02d", cptStaying) + "-" + atomComplement.replace("@","") + ";";
-						}
-						
-					}
-					//increment by 1 because 1 atom is added
-					cptStaying++;
-					for (Entry<Integer,String> e2 : bondComplements.entrySet()) {
-						int index = e2.getKey() + cptStaying;
-						stereo += String.format("%02d", index) + "-" + e2.getValue() + ";";
-					}
-					stayingComplementCodes[0] = charges;
-					stayingComplementCodes[1] = stereo;
-					stayingComplementCodes[2] = isotopes;
-					//increment with the number of bonds (corresponds to the position of the next atom)
-					cptStaying = cptStaying + cptBond;
-				}
-			}
-			if (stayingCodes.length() > 0) {
-				if (stayingComplementCodes[0].length() > 0) {
-					stayingCodes.append("/c"+stayingComplementCodes[0]);
-				}
-				if (stayingComplementCodes[1].length() > 0) {
-					stayingCodes.append("/s"+stayingComplementCodes[1]);
-				}
-				if (stayingComplementCodes[2].length() > 0) {
-					stayingCodes.append("/i"+stayingComplementCodes[2]);
-				}
-				tempResult.put(depth, stayingCodes.toString());
-			}
-			if (leavingCodes.length() > 0) {
-				if (leavingComplementCodes[0].length() > 0) {
-					leavingCodes.append("/c"+leavingComplementCodes[0]);
-				}
-				if (leavingComplementCodes[1].length() > 0) {
-					leavingCodes.append("/s"+leavingComplementCodes[1]);
-				}
-				if (leavingComplementCodes[2].length() > 0) {
-					leavingCodes.append("/i"+leavingComplementCodes[2]);
-				}
-				tempResult.put(leavingIndicator+depth, leavingCodes.toString());
-
-			}
-		}
-		
-		//sort result by depth and group
-		Map<String,String> result = new LinkedHashMap<String,String>();
-		for (Entry<Integer,String> e : tempResult.entrySet()) {
-			int depth2 = e.getKey();
-			if (depth2 < leavingIndicator) {
-				result.put(String.valueOf(depth2), e.getValue());
-			}
-			else {
-				int newDepth = depth2 - leavingIndicator;
-				result.put(Character.toString((char) (64+newDepth)), e.getValue());
-			}
-		}
-		
-		return result;
-	}
-	*/
 
 	/**
 	 * @param acSet
@@ -1250,6 +1704,8 @@ public class EncodeReactionCode {
 	}
 
 	/**
+	 * Generate individual atom and bond code and also abCode (atom code), which combines
+	 * the atomCode and the reverse sorted code of all connected bonds (will be used for ranking)
 	 * @param sphere
 	 * @param indexAtomReactants
 	 * @param indexBondReactants
@@ -1268,31 +1724,68 @@ public class EncodeReactionCode {
 
 		visited.addAll(sphere);
 		for (IAtom atom : sphere) {
+			String abCode = "";
 			if (atom.getProperty("depth") == null) {
 				atom.setProperty("depth", depth);
 			}
+			
+			//generate atom code
 			List<IBond> bonds = atomContainer.getConnectedBondsList(atom);
 			if (atom.getProperty("code") == null) {
 				String code = encodeAtom(atom, bonds, indexAtomReactants);
 				atom.setProperty("code", code+"_"+cpt);
+				atom.setProperty("code2", code);
+				atom.setProperty("connectedBondsList", bonds);
+				abCode += code;
 			}
+			else {
+				abCode = atom.getProperty("code2");
+			}
+			
+			//generate bond code and other part of abCode
+			List<String> connectedBondCodes = new ArrayList<String>();
+			List<IAtom> connectedAtomInPreviousLayerList = new ArrayList<IAtom>();
 			for (IBond bond : bonds) {
+				String bondCode;
 				if (bond.getProperty("code") == null) {
-//					bond.setProperty("code", encodeBond(bond)+"_"+depth);
-					bond.setProperty("code", encodeBond(bond, indexBondReactants)+"_"+depth);
+					bondCode = encodeBond(bond, indexBondReactants);
+					bond.setProperty("code", bondCode+"_"+depth);
+					bond.setProperty("code2", bondCode);
 				}
+				else {
+					bondCode = bond.getProperty("code2");
+				}
+				connectedBondCodes.add(bondCode);
+				
 				nextAtom = bond.getOther(atom);
 				if (!visited.contains(nextAtom)) {
 					if (!sphere.contains(nextAtom)) {
 						newSphere.add(nextAtom);
 					}
 				}
+				if (nextAtom.getProperty("depth") != null) {
+					int d = (int) nextAtom.getProperty("depth");
+					if (d == depth - 1) {
+						connectedAtomInPreviousLayerList.add(nextAtom);
+					}
+				}
 			}
+			atom.setProperty("connectedAtomInPreviousLayerList", connectedAtomInPreviousLayerList);
+			
+			//complete abcode by reverse sorting bond code and merge all codes
+			Collections.sort(connectedBondCodes, Collections.reverseOrder());
+			for (String bCode : connectedBondCodes) {
+				abCode += bCode;
+			}
+			atom.setProperty("abCode", abCode);
 		}
 		if (newSphere.size() > 0) {
+			//dead code because the depth start at 1 as atoms in RC is the initlial list
+			/*
 			if (depth == 0) {
 				sphereList.put(0, newSphere);
 			}
+			*/
 			sphereList.put(depth, newSphere);
 			//System.out.println(sphereList);
 			generateAllAtomAndBondCodes(newSphere, indexAtomReactants, indexBondReactants, atomContainer, 
@@ -1399,11 +1892,12 @@ public class EncodeReactionCode {
 	 * 10 = 4+8 (both broken and order changes);
 	 * 12 = 6+8 (both made and order changes);
 	 * 5 = (4 + 1), 7 = (6 + 1), 9 = (8 + 1), 11 = (10 + 1) and 13 = (12 + 1)
+	 * NB: the score related to the higher bond change information is kept
 	 * @param bond
 	 * @return
 	 */
 	private int getRCScore(List<IBond> bonds) {
-		int centerStatusValue = 99;
+		int centerStatusValue = -1;
 		for (IBond bond : bonds) {
 			int score = 0;
 			if (bond.getProperty(BOND_CHANGE_INFORMATION) != null) {
@@ -1418,12 +1912,12 @@ public class EncodeReactionCode {
 			else {
 				score += 0;
 			}
-			if (score > 0 && score < centerStatusValue) {
+			if (score > 0 && score > centerStatusValue) {
 				centerStatusValue = score;
 			}
 		}
 		
-		return (centerStatusValue != 99) ? centerStatusValue : 0;
+		return (centerStatusValue != -1) ? centerStatusValue : 0;
 	}
 
 	/**
@@ -2175,7 +2669,7 @@ public class EncodeReactionCode {
 	/**
 	 * @param container
 	 */
-	private void reinitializedConstants(IAtomContainer container) {
+	private void reinitializedVisitedConstants(IAtomContainer container) {
 		for (int i = 0; i < container.getAtomCount(); i++) {
 			container.getAtom(i).setFlag(CDKConstants.VISITED, false);
 		}
@@ -2237,6 +2731,16 @@ class CompareByPriority implements Comparator<IAtom> {
 	} 
 }
 
+//ascending comparison res = (1,2,3)
+class CompareByPosition implements Comparator<IAtom> { 
+	public int compare(IAtom a1, IAtom a2) { 
+		if ((int) a1.getProperty("position") > (int) a2.getProperty("position"))
+			return 1;
+		else 
+			return -1;
+	} 
+}
+
 class CompareByRank implements Comparator<IAtom>{ 
 	public int compare(IAtom a1, IAtom a2) { 
 		if ((a1.getProperty("rank").toString()).compareTo(a2.getProperty("rank").toString()) < 0)
@@ -2250,6 +2754,16 @@ class CompareByRank implements Comparator<IAtom>{
 class CompareByAtomCode implements Comparator<IAtom> { 
 	public int compare(IAtom a1, IAtom a2) { 
 		if (((String) a1.getProperty("code")).compareTo(a2.getProperty("code")) < 0)
+			return 1;
+		else 
+			return -1;
+	} 
+}
+
+//descending comparison res = (3,2,1)
+class CompareByABCode implements Comparator<IAtom> { 
+	public int compare(IAtom a1, IAtom a2) { 
+		if (((String) a1.getProperty("abCode")).compareTo(a2.getProperty("abCode")) < 0)
 			return 1;
 		else 
 			return -1;

@@ -1,7 +1,12 @@
 package com.nih.codes;
 
+import java.awt.Color;
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -26,6 +31,7 @@ import org.openscience.cdk.Bond;
 import org.openscience.cdk.CDKConstants;
 import org.openscience.cdk.DefaultChemObjectBuilder;
 import org.openscience.cdk.Reaction;
+import org.openscience.cdk.aromaticity.Kekulization;
 import org.openscience.cdk.exception.CDKException;
 import org.openscience.cdk.interfaces.IAtom;
 import org.openscience.cdk.interfaces.IAtomContainer;
@@ -55,6 +61,9 @@ import com.nih.tools.ElementCalculation;
 import com.nih.tools.tools;
 
 public class DecodeReactionCode {
+	
+	int idReaction;
+	String cReactionCode;
 
 	private HashMap<String,Integer> reverseConnectionTableAlphabet = new HashMap<String,Integer>();
 	private Set<IAtom> reactionCenter = new HashSet<IAtom>();
@@ -94,24 +103,25 @@ public class DecodeReactionCode {
 		init();
 
 		IReactionSet reactions = DefaultChemObjectBuilder.getInstance().newInstance(IReactionSet.class);
-		int id = 0;
+		idReaction = 0;
 		for (String reactionCode : reactionCodes) {
 			IReaction reaction;
+			cReactionCode = reactionCode;
 			try {
 				reaction = decode(reactionCode);
-				reaction.setID(id+"");
+				reaction.setID(idReaction+"");
 			}
 			catch (Exception e){
 				reaction = new Reaction();
-				reaction.setID(id+"");
-				errors.add(id + "\t decoding failure \t" + reactionCode + "\n");
+				reaction.setID(idReaction+"");
+				errors.add(idReaction + "\t decoding failure \t" + reactionCode + "\n");
 			} 
 			
 			if (reaction.getProperty("mappingError") != null) {
-				errors.add(id + "\t mapping error \t" + reactionCode + "\n");
+				errors.add(idReaction + "\t mapping error \t" + reactionCode + "\n");
 			}
 			reactions.addReaction(reaction);
-			id++;
+			idReaction++;
 		}
 		reactions.setProperty("errors", errors);
 		return reactions; 
@@ -126,9 +136,8 @@ public class DecodeReactionCode {
 		reaction.setProperty("bondsFormed", bondsFormed);
 		reaction.setProperty("bondsOrder", bondsOrder);
 		//generate coordinates
-		StructureDiagramGenerator2 sdg2 = new StructureDiagramGenerator2();
 		try {
-			sdg2.generateCoordinates(reaction);
+			cleanReaction(reaction);
 		} catch (CDKException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -136,6 +145,28 @@ public class DecodeReactionCode {
 	return reaction; 
 	}
 	
+	/**
+	 * generate coordinates
+	 * @param mol
+	 * @return
+	 * @throws CDKException
+	 */
+	private void cleanReaction(IReaction reaction) throws CDKException {
+		//use StructureDiagramGenerator2 because StructureDiagramGenerator modify the stereo and can remove it
+		StructureDiagramGenerator2 sdg = new StructureDiagramGenerator2();
+		for (IAtomContainer mol : reaction.getAgents().atomContainers()) {
+			sdg.setMolecule(mol, false);
+			sdg.generateCoordinates();
+		}
+		for (IAtomContainer mol : reaction.getReactants().atomContainers()) {
+			sdg.setMolecule(mol, false);
+			sdg.generateCoordinates();
+		}
+		for (IAtomContainer mol : reaction.getProducts().atomContainers()) {
+			sdg.setMolecule(mol, false);
+			sdg.generateCoordinates();
+		}
+	}
 	
 	/**
 	 * @param code
@@ -209,34 +240,6 @@ public class DecodeReactionCode {
 						isotopes.put(index, isotope);
 					}
 				}
-				/*
-				if (subLayer.charAt(0) == 'c') {
-					subLayer = subLayer.substring(1);
-					String[] properties = subLayer.split(";");
-					for (String property : properties) {
-						int index = Integer.parseInt(property.substring(0, property.indexOf("-")));
-						String charge =  property.substring(property.indexOf("-")+1);
-						charges.put(index, charge);
-					}
-				}
-				if (subLayer.charAt(0) == 's') {
-					subLayer = subLayer.substring(1);
-					String[] properties = subLayer.split(";");
-					for (String property : properties) {
-						int index = Integer.parseInt(property.substring(0, property.indexOf("-")));
-						String stereo =  property.substring(property.indexOf("-")+1);
-						stereoInfo.put(index, stereo);
-					}
-				}
-				if (subLayer.charAt(0) == 'i') {
-					subLayer = subLayer.substring(1);
-					String[] properties = subLayer.split(";");
-					for (String property : properties) {
-						int index = Integer.parseInt(property.substring(0, property.indexOf("-")));
-						String isotope =  property.substring(property.indexOf("-")+1);
-						isotopes.put(index, isotope);
-					}
-				}*/
 			}
 			
 //			System.out.println("charges " + charges);
@@ -353,6 +356,10 @@ public class DecodeReactionCode {
 					bond.setProperty("orderInReactant", reactantOrder);
 					//Determine bond status (cleaved, formed, order change)
 					determineBondStatus(bond , reactantOrder, productOrder);
+					//add repetition property
+					double bondRepetition = ((double) bond.getBegin().getProperty("repetition") > (double) bond.getEnd().getProperty("repetition"))
+							? bond.getBegin().getProperty("repetition") : bond.getEnd().getProperty("repetition");
+					bond.setProperty("repetition", bondRepetition);
 //					System.out.println(bond);
 //					System.out.println(bond.getProperties());
 					pseudoMolecule.addBond(bond);
@@ -364,6 +371,34 @@ public class DecodeReactionCode {
 		return pseudoMolecule;
 	}
 
+
+	/**
+	 * @param ac
+	 * @param bond
+	 * @param repeatedAtoms
+	 * @param repetition
+	 */
+	private void addRepeatedBond(IAtomContainer ac, IBond bond, Map<IAtom,List<IAtom>> repeatedAtoms, int repetition) {
+		List <IAtom> rbegins = repeatedAtoms.get(bond.getBegin());
+		List <IAtom> rends = repeatedAtoms.get(bond.getEnd());
+		for (int i = 0; i < repetition; i++) {
+			IBond repeated = shallowCopyBond(bond);
+			IAtom rbegin = repeated.getAtom(0);
+			IAtom rend = repeated.getAtom(1);
+			if (rbegins.size() > 1){
+				rbegin = rbegins.get(i);
+				repeated.setAtom(rbegin, 0);
+			}
+			if (rends.size() > 1) {
+				rend = rends.get(i);
+				repeated.setAtom(rend, 1);
+			}
+			if (ac.getBond(repeated.getBegin(), repeated.getEnd()) != null)
+				continue;
+			ac.addBond(repeated);
+		}
+	}
+	
 	/**
 	 * @param pseudoMolecule
 	 * @return
@@ -379,12 +414,31 @@ public class DecodeReactionCode {
 		Set<IAtom> stereocenterInReactant = new HashSet<IAtom>();
 		Set<IAtom> stereocenterInProduct = new HashSet<IAtom>();
 		
+		Map<IAtom,List<IAtom>> repeatedAtoms = new HashMap<IAtom,List<IAtom>>();
+		
 		for (IAtom atom : pseudoMolecule.atoms()) {
+			int repetition = (int)((double)atom.getProperty("repetition"));
 			aggregateReactants.addAtom(atom);
 			aggregateProducts.addAtom(atom);
+			//if (repetition > 1) {
+				List<IAtom> atoms = new ArrayList<IAtom>();
+				atoms.add(atom);
+				for (int i = 1; i < repetition; i++) {
+					IAtom repeated = new Atom(atom);
+					repeated.setProperties(atom.getProperties());
+					aggregateProducts.addAtom(repeated);
+					atoms.add(repeated);
+				}
+				repeatedAtoms.put(atom, atoms);
+			//}
+			//else {
+			//	repeatedAtoms.put(atom, new ArrayList<IAtom>());
+			//}
 		}
-		
+		List<IBond> madeBondtoAdd = new ArrayList<IBond>();
+		List<IAtom> atomsInvolvedInMadeBondtoAdd = new ArrayList<IAtom>();
 		for (IBond bond : pseudoMolecule.bonds()) {
+			int repetition = (int)((double)bond.getProperty("repetition"));
 			if (bond.getProperty(BOND_CHANGE_INFORMATION) != null) {
 				if ((int)bond.getProperty(BOND_CHANGE_INFORMATION) == BOND_CLEAVED) {
 					aggregateReactants.addBond(bond);
@@ -393,7 +447,24 @@ public class DecodeReactionCode {
 					reactionCenter.add(bond.getEnd());
 				}
 				else if ((int)bond.getProperty(BOND_CHANGE_INFORMATION) == BOND_FORMED) {
-					aggregateProducts.addBond(bond);
+					//aggregateProducts.addBond(bond);
+					if (repetition > 1) {
+						//addRepeatedBond(aggregateProducts, bond, repeatedAtoms, repetition, null, madeBondCheck);
+						madeBondtoAdd.add(bond);
+						IAtom begin = bond.getBegin();
+						IAtom end = bond.getEnd();
+						if (!atomsInvolvedInMadeBondtoAdd.contains(begin)) {
+							begin.setProperty("nRep", repeatedAtoms.get(begin).size());
+							atomsInvolvedInMadeBondtoAdd.add(begin);
+						}
+						if (!atomsInvolvedInMadeBondtoAdd.contains(end)){
+							end.setProperty("nRep", repeatedAtoms.get(end).size());
+							atomsInvolvedInMadeBondtoAdd.add(end);
+						}
+					}
+					else {
+						aggregateProducts.addBond(bond);
+					}
 				}
 				else if ((int)bond.getProperty(BOND_CHANGE_INFORMATION) == BOND_ORDER) {
 					IBond copy = shallowCopyBond(bond);
@@ -408,7 +479,14 @@ public class DecodeReactionCode {
 						copy.setIsAromatic(false);
 					}
 					aggregateReactants.addBond(copy);
-					aggregateProducts.addBond(bond);
+					//aggregateProducts.addBond(bond);
+					if (repetition > 1) {
+						//do not add in cleaved. It's made later
+						addRepeatedBond(aggregateProducts, bond, repeatedAtoms, repetition);
+					}
+					else {
+						aggregateProducts.addBond(bond);
+					}
 					bondsOrder.add(copy);
 					reactionCenter.add(bond.getBegin());
 					reactionCenter.add(bond.getEnd());
@@ -422,6 +500,10 @@ public class DecodeReactionCode {
 				}
 				aggregateReactants.addBond(copy);
 				aggregateProducts.addBond(bond);
+				if (repetition > 1) {
+					//do not add in cleaved. It's made later
+					addRepeatedBond(aggregateProducts, bond, repeatedAtoms, repetition);
+				}
 			}
 			if (bond.getProperty(BOND_STEREO) != null) {
 				if (bond.getBegin().getProperty(IS_STEREOCENTER) != null) {
@@ -435,6 +517,29 @@ public class DecodeReactionCode {
 			}
 		}
 		
+		//add made bonds, which involve repeated atoms
+		Collections.sort(atomsInvolvedInMadeBondtoAdd, new CompareByRep());
+		for (IAtom a : atomsInvolvedInMadeBondtoAdd) {
+			List<IAtom> atoms = repeatedAtoms.get(a);
+			for (IAtom r : atoms) {
+				for (IBond b : madeBondtoAdd) {
+					if (b.getAtom(0).equals(a)) {
+						b.setAtom(r, 0);
+						break;
+					}
+					if (b.getAtom(1).equals(a)) {
+						b.setAtom(r, 1);
+						break;
+					}
+				}
+			}
+		}
+
+		for (IBond b : madeBondtoAdd) {
+			aggregateProducts.addBond(b);
+			System.out.println(b);
+		}
+
 		aggregateProducts = aggregateProducts.clone();
 		for (IBond bond : aggregateProducts.bonds()) {
 			if (bond.getProperty(BOND_CHANGE_INFORMATION) != null) {
@@ -486,15 +591,21 @@ public class DecodeReactionCode {
 			
 		}
 		
+		//kekulize
+		try {
+			Kekulization.kekulize(aggregateReactants);
+			Kekulization.kekulize(aggregateProducts);
+		}
+		catch (Exception e) {
+			errors.add(idReaction + "\t can't be kekulized \t" + cReactionCode + "\n");
+		}
+		
+		//configureAtomAndType
 		AtomContainerManipulator.percieveAtomTypesAndConfigureAtoms(aggregateReactants);
 		tools.addMissingHydrogen(aggregateReactants);
-//		CDKHydrogenAdder adder = CDKHydrogenAdder.getInstance(pseudoMolecule.getBuilder());
-//		adder.addImplicitHydrogens(aggregateReactants);
 		
 		AtomContainerManipulator.percieveAtomTypesAndConfigureAtoms(aggregateProducts);
 		tools.addMissingHydrogen(aggregateProducts);
-//		adder = CDKHydrogenAdder.getInstance(aggregateProducts.getBuilder());
-//		adder.addImplicitHydrogens(aggregateProducts);
 				
 		IAtomContainerSet reactants = FragmentUtils.makeAtomContainerSet(aggregateReactants);
 		
@@ -507,13 +618,13 @@ public class DecodeReactionCode {
 		}
 		reaction.setProducts(products);
 		for (IAtomContainer ac : products.atomContainers()) {
-			reaction.setReactantCoefficient(ac, ac.getAtom(0).getProperty("repetition"));
+			reaction.setReactantCoefficient(ac, 1.0);
 		}
 		
 		if (pseudoMolecule.getProperty("mappingError") != null) {
 			reaction.setProperty("mappingError", true);
 		}
-		
+
 		return reaction;
 	}
 	
@@ -1172,4 +1283,14 @@ public class DecodeReactionCode {
 	public List<String> getErrors() {
 		return errors;
 	}
+}
+
+//descending comparison res = (3,2,1)
+class CompareByRep implements Comparator<IAtom> { 
+	public int compare(IAtom a1, IAtom a2) { 
+		if ((int) a1.getProperty("nRep") < (int) a2.getProperty("nRep"))
+			return 1;
+		else 
+			return -1;
+	} 
 }
