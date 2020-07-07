@@ -297,7 +297,6 @@ public class PseudoMolecule {
 		//reference bonds index
 		for (int j = 0; j < products.getBondCount(); j++) {
 			IBond bond = products.getBond(j);
-			System.out.println(bond.getID());
 			indexBondsInProducts.put(bond.getID(), j);
 		}
 

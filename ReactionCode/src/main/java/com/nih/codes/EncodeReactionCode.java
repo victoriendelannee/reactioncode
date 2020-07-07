@@ -159,7 +159,6 @@ public class EncodeReactionCode {
 				//initialize position
 				int tempPos = position + size - 1;
 				for (IAtom a : conflictedAtoms) {
-					System.out.println(" tempPos pos " + tempPos);
 					a.setProperty("position", tempPos);
 				}
 			}

@@ -25,7 +25,6 @@ import org.openscience.cdk.interfaces.IReactionSet;
 import com.nih.codes.EncodeReactionCode;
 import com.nih.parser.ChemicalFormatParser;
 import com.nih.reaction.PseudoMolecule;
-import com.nih.tools.ColouredSystemOutPrintln;
 import com.nih.tools.tools;
 import com.opencsv.CSVWriter;
 
@@ -40,12 +39,14 @@ public class TestEncoder {
 		//String reactionFile = "/datahdd/SAVI/Alexey/testMapping/testMapping3.rdf";
 		//String reactionFile = "/home/delanneev/Downloads/devendraFromated.txt";
 		//String reactionFile = "[CH3:1][Si:4]([Cl:3])([CH3:6])[CH3:8].[CH2:2]([C:5]=1[CH:11]=[C:13]([NH2:15])[CH:16]=[CH:14][CH:12]1)[C:7](=[O:9])[OH:10]>>[CH2:1]([CH:2]([C:5]=1[CH:11]=[C:13]([NH2:15])[CH:16]=[CH:14][CH:12]1)[C:7](=[O:9])[OH:10]).[Si:4]([CH3:6])[CH3:8].[ClH:3]";
-		String reactionFile = "[cH2:1]1([Br:21])[cH2:2][cH2:3][cH:4]([cH2:5][cH2:6]1)[cH:7]2[cH2:8][cH2:9][cH2:10]([Br:22])[cH2:11][cH2:12]2.[NH2:13][cH:14]3[cH2:15][cH2:16][cH2:17][cH:18]([cH2:19]3)[CH3:20]>>[cH2:1]1([NH2:13][cH:14]3[cH2:15][cH2:16][cH2:17][cH:18]([cH2:19]3)[CH3:20])[cH2:2][cH2:3][cH:4]([cH2:5][cH2:6]1)[cH:7]2[cH2:8][cH2:9][cH2:10]([NH2:13][cH:14]3[cH2:15][cH2:16][cH2:17][cH:18]([cH2:19]3)[CH3:20])[cH2:11][cH2:12]2";
+		//String reactionFile = "[cH2:1]1([Br:21])[cH2:2][cH2:3][cH:4]([cH2:5][cH2:6]1)[cH:7]2[cH2:8][cH2:9][cH2:10]([Br:22])[cH2:11][cH2:12]2.[NH2:13][cH:14]3[cH2:15][cH2:16][cH2:17][cH:18]([cH2:19]3)[CH3:20]>>[cH2:1]1([NH2:13][cH:14]3[cH2:15][cH2:16][cH2:17][cH:18]([cH2:19]3)[CH3:20])[cH2:2][cH2:3][cH:4]([cH2:5][cH2:6]1)[cH:7]2[cH2:8][cH2:9][cH2:10]([NH2:13][cH:14]3[cH2:15][cH2:16][cH2:17][cH:18]([cH2:19]3)[CH3:20])[cH2:11][cH2:12]2";
+		//String reactionFile = "/Users/delanneevc/Downloads/valid.txt";
+		String reactionFile = "[CH3:1][C:2](=[O:3])[CH3:4].[CH3:10][Si:4][O:5][S:6](=[O:7])(=[O:8])[CH3:9]>>[CH2:1]=[C:2]([O:3][Si:4][CH3:10])[CH3:4]";
 		//2 reactants -> 3 products but one missing (generated a wrong PM because of RC detection) CORRECTED
 		//String reactionFile = "[CH3:1][Si:4]([Cl:3])([CH3:6])[CH3:8].[CH2:2]([C:5]=1[CH:11]=[C:13]([NH2:15])[CH:16]=[CH:14][CH:12]1)[C:7](=[O:9])[OH:10]>>[CH2:1]([CH:2]([C:5]=1[CH:11]=[C:13]([NH2:15])[CH:16]=[CH:14][CH:12]1)[C:7](=[O:9])[OH:10]).[Cl:3]";
 		//test substitution case
 		//String outputDirectory = "/datahdd/SAVI/Alexey/testMapping/";
-		String outputDirectory = "/Users/delanneevc/Documents/testReactionCode";
+		String outputDirectory = "/Users/delanneevc/Documents/testReactionCode/";
 		String errorsFileName;
 		boolean makePseudoSmiles = false;
 		boolean makeImage = false;
@@ -78,6 +79,7 @@ public class TestEncoder {
 		
 		if (outputFormat.equals("csv")) {
 			outputfile = new FileWriter(outputDirectory + prefix + "_reactionsCode.csv"); 
+			System.out.println(outputDirectory + prefix + "_reactionsCode.csv");
 			csvWriter = new CSVWriter(outputfile, '\t', CSVWriter.DEFAULT_QUOTE_CHARACTER, CSVWriter.DEFAULT_ESCAPE_CHARACTER,
 					CSVWriter.DEFAULT_LINE_END); 
 		}
@@ -111,9 +113,9 @@ public class TestEncoder {
 		}
 
 		for (int i = 0; i < reactions.getReactionCount(); i++) {
-//			if (i == 500) {
-//				break;
-//			}
+			if (i == 500) {
+				break;
+			}
 			IReaction reaction = reactions.getReaction(i);
 //			System.out.println("reaction " + i );
 //			System.out.println(reaction.getProperties());
