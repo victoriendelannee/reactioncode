@@ -64,6 +64,7 @@ public class CommandLineOptions {
        options.addOption("x", "RXN", false, "Write RXN of the Reaction");
        options.addOption("m", "SMIRKS", false, "Write SMIRKS (reaction SMARTS)");
        options.addOption("s", "SMILES", false, "Write Reaction SMILES");
+       options.addOption("h", "nohydrogen", false, "Don't caclulate Hydrogens for the last layer. This option might be helpful if you want to use part of the ReactionCode (the last layer missing in that case the connections with other layers), convert it for instance into SMIRKS and use the SMIRKS to apply a transform");
        options.addOption("e", "examples", false, "Show examples");
        options.addOption("h", "help", false, "Help page for command usage");
 

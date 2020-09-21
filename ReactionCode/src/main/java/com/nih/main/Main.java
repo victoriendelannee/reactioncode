@@ -498,6 +498,7 @@ public class Main {
 		String outputDirectory;
 		String errorsFileName;
 		boolean makeImage = false;
+		boolean addHydrogenForLastLayer = true;
 		boolean writeSMIRKS = false;
 		boolean writeSMIRKSWMapping = false;
 		boolean writeRXN = false;
@@ -518,6 +519,9 @@ public class Main {
 
 		if (commands.hasOption('i')) {
 			makeImage = true;
+		}
+		if (commands.hasOption('h')) {
+			addHydrogenForLastLayer = false;
 		}
 		if (commands.hasOption('s')) {
 			writeSMIRKS = true;
@@ -582,6 +586,7 @@ public class Main {
 				parser.getReactionCount() + " reactions are decoding "+ ColouredSystemOutPrintln.ANSI_RESET);
 
 		DecodeReactionCode decoder = new DecodeReactionCode();
+		decoder.setAddHydrogenForLastLayer(addHydrogenForLastLayer); 
 		IReactionSet reactions = DefaultChemObjectBuilder.getInstance().newInstance(IReactionSet.class);
 		int cpt = 1;
 		int reactionCount = 0;
@@ -844,6 +849,7 @@ public class Main {
 		transformer.setCheckValence(checkValence);
 		
 		DecodeReactionCode decoder = new DecodeReactionCode();
+		decoder.setAddHydrogenForLastLayer(false);
 		IReactionSet reactions = DefaultChemObjectBuilder.getInstance().newInstance(IReactionSet.class);
 		int cpt = 1;
 		int reactionCount = 0;

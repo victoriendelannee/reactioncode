@@ -64,6 +64,8 @@ public class DecodeReactionCode {
 	
 	int idReaction;
 	String cReactionCode;
+	boolean addHydrogenForLastLayer = true;
+	int maxDepth;
 
 	private HashMap<String,Integer> reverseConnectionTableAlphabet = new HashMap<String,Integer>();
 	private Set<IAtom> reactionCenter = new HashSet<IAtom>();
@@ -189,7 +191,9 @@ public class DecodeReactionCode {
 		}
 		int leavingFirstIndex = -1;
 		
-		for (String layer : layers) {
+		for (int currentLayerDepth = 0; currentLayerDepth < layers.length; currentLayerDepth++) {
+			maxDepth = currentLayerDepth;
+			String layer = layers[currentLayerDepth];
 			boolean staying = Character.isDigit(layer.charAt(0)) ? true : false;
 			
 			if (layer.charAt(0) == 'A' && leavingFirstIndex == -1) {
@@ -262,6 +266,7 @@ public class DecodeReactionCode {
 				int mapping = pseudoMolecule.getAtomCount();
 				atom.setID(mapping+"");
 				atom.setProperty(CDKConstants.ATOM_ATOM_MAPPING, mapping+1);
+				atom.setProperty("depth", currentLayerDepth);
 				
 				if (charges.containsKey(cpt)) {
 					String charge = charges.get(cpt);
@@ -600,10 +605,16 @@ public class DecodeReactionCode {
 		
 		//configureAtomAndType
 		AtomContainerManipulator.percieveAtomTypesAndConfigureAtoms(aggregateReactants);
-		tools.addMissingHydrogen(aggregateReactants);
+		if (addHydrogenForLastLayer)
+			tools.addMissingHydrogen(aggregateReactants, -1);
+		else
+			tools.addMissingHydrogen(aggregateReactants, maxDepth);
 		
 		AtomContainerManipulator.percieveAtomTypesAndConfigureAtoms(aggregateProducts);
-		tools.addMissingHydrogen(aggregateProducts);
+		if (addHydrogenForLastLayer)
+			tools.addMissingHydrogen(aggregateProducts, -1);
+		else
+			tools.addMissingHydrogen(aggregateProducts, maxDepth);
 				
 		IAtomContainerSet reactants = FragmentUtils.makeAtomContainerSet(aggregateReactants);
 		
@@ -1281,6 +1292,11 @@ public class DecodeReactionCode {
 	public List<String> getErrors() {
 		return errors;
 	}
+
+	public void setAddHydrogenForLastLayer(boolean addHydrogenForLastLayer) {
+		this.addHydrogenForLastLayer = addHydrogenForLastLayer;
+	}
+	
 }
 
 //descending comparison res = (3,2,1)

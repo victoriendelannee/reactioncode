@@ -67,8 +67,12 @@ public class tools {
 	/**
 	 * @param ac
 	 */
-	public static void addMissingHydrogen(IAtomContainer ac) {
+	public static void addMissingHydrogen(IAtomContainer ac, int maxDepth) {
 		for (IAtom atom : ac.atoms()) {
+			if (maxDepth > -1) {
+				if ((int) atom.getProperty("depth") == maxDepth)
+					continue;
+			}	
 			if (atom.getSymbol().equals("R")) {
 				atom.setImplicitHydrogenCount(0);
 				continue;
@@ -215,7 +219,7 @@ public class tools {
 		SmilesGenerator sg;
 		
 		if (missingHydrogen)
-			addMissingHydrogen(ac);
+			addMissingHydrogen(ac, -1);
 		
 		if (stereo == false && aam == false) 
 			sg = new SmilesGenerator(SmiFlavor.Canonical);
