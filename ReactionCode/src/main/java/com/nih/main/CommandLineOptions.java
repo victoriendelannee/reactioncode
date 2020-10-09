@@ -85,6 +85,7 @@ public class CommandLineOptions {
       options.addOption("u", "unique", false, "generate one possible reaction (best match)");
       options.addOption("z", "stoichiometry", true, "stoichiometry (number of times a same reactant can react on different site)");
       options.addOption("c", "checkValence", false, "Check the valence of the atom in reaction center to filter candidates");
+      options.addOption("z", "time", false, "Define a time limit in seconds per reaction transformation (prevent transformation from taking too much time) (default is 60 seconds)");
       options.addOption("i", "image", false, "Create image of the Reaction");
       options.addOption("r", "RDF", false, "Write RDF of the Reaction");
       options.addOption("x", "RXN", false, "Write RXN of the Reaction");

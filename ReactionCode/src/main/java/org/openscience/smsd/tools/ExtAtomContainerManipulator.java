@@ -29,7 +29,7 @@ import java.util.Objects;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import org.openscience.cdk.AtomContainer;
+import org.openscience.cdk.silent.AtomContainer;
 import org.openscience.cdk.CDKConstants;
 import org.openscience.cdk.aromaticity.Aromaticity;
 import org.openscience.cdk.aromaticity.ElectronDonation;

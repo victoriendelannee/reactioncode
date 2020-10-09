@@ -18,7 +18,7 @@ public class additionalConstants {
 	public final static int LEAVING_ATOM = 0x0003;
 
 	/** Flag is set if bond is formed. */
-	public final static int BOND_FORMED = 0x0004;
+	public final static int BOND_MADE = 0x0004;
 
 	/** Flag is set if bond is cleaved. */
 	public final static int BOND_CLEAVED = 0x0005;

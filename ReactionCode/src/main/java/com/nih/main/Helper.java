@@ -177,7 +177,7 @@ class Helper {
         sb.append(NEW_LINE);
         sb.append("Transformer example: ");
         sb.append(NEW_LINE);
-        sb.append("java -jar ReactionCode-1.0.0.jar -q \"0:907()[1]711()[1]706(10GH01GG)[1]|1:007(99GI)[1]006(99GI)[1]006(11GG)[1]\" -t \"[NH2:1][CH:6]1[CH2:11][CH2:17][CH2:22][CH2:18][CH2:12]1.[Cl:2][cH:3]1[n:4]([nH:7][cH:8]2[cH:5]1[cH2:10][cH2:16][cH:19]([cH2:13]2)[F:23])-[cH:9]3[cH2:14][cH2:20][cH:24]([cH2:21][cH2:15]3)[Cl:25]\" -m ");
+        sb.append("java -jar ReactionCode-1.0.0.jar -q \"0:907()[1]711()[1]706(10GH01GG)[1]|1:007(99GI)[1]006(99GI)[1]006(11GG)[1]\" -t \"[NH2:1][CH:6]1[CH2:11][CH2:17][CH2:22][CH2:18][CH2:12]1.[Cl:2][c:3]1[n:4]([n:7][c:8]2[c:5]1[cH:10][cH:16][c:19]([cH:13]2)[F:23])-[c:9]3[cH:14][cH:20][c:24]([cH:21][cH:15]3)[Cl:25]\" -m ");
         sb.append(NEW_LINE);
         out.println(sb.toString());
     }

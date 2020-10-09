@@ -121,7 +121,8 @@ public class API {
 	public IReaction tranformer(String reactionCode, IAtomContainerSet reagents) throws CloneNotSupportedException, CDKException {
 		IReaction transform = decoder(reactionCode);
 		Transformer transformer = new Transformer();
-		return transformer.applyTranform(reagents, transform);
+		transformer.setStoichiometry(1);
+		return transformer.transform(reagents, transform).get(0);
 	}
 	
 	/**
@@ -135,7 +136,7 @@ public class API {
 	public List<IReaction> tranformer2(String reactionCode, IAtomContainerSet reagents) throws CloneNotSupportedException, CDKException {
 		IReaction transform = decoder(reactionCode);
 		Transformer transformer = new Transformer();
-		return transformer.applyTranform2(reagents, transform);
+		return transformer.transform(reagents, transform);
 	}
 	
 	/**
@@ -151,6 +152,41 @@ public class API {
 		IReaction transform = decoder(reactionCode);
 		Transformer transformer = new Transformer();
 		transformer.setStoichiometry(stoichiometry);
-		return transformer.applyTranform2(reagents, transform);
+		return transformer.transform(reagents, transform);
+	}
+	
+	/**
+	 * @param reaction
+	 * @param atomAtomMapping
+	 * @return
+	 * @throws CDKException 
+	 */
+	public String makeSMILES(IReaction reaction, boolean atomAtomMapping) throws CDKException {
+		return tools.makeSmiles(reaction, atomAtomMapping); 
+	}
+	
+	/**
+	 * @param set
+	 * @param atomAtomMapping
+	 * @return
+	 * @throws CDKException
+	 */
+	public String makeSMILES(IAtomContainerSet set, boolean atomAtomMapping) throws CDKException {
+		String smi = "";
+		for (IAtomContainer ac : set.atomContainers()) {
+			smi +=makeSMILES(ac, atomAtomMapping) + ".";
+		}
+		smi = smi.substring(0, smi.length() - 1);
+		return smi;
+	}
+	
+	/**
+	 * @param ac
+	 * @param atomAtomMapping
+	 * @return
+	 * @throws CDKException
+	 */
+	public String makeSMILES(IAtomContainer ac, boolean atomAtomMapping) throws CDKException {
+		return tools.makeSmiles(ac, true, atomAtomMapping, false) ;
 	}
 }
