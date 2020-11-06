@@ -96,7 +96,7 @@ public class PseudoMolecule {
 		atomsInPseudoMol.clear();
 		bondsInPseudoMol.clear();
 		atomRepetitions.clear();
-		indexAtomsPseudoMolUnique.clear();	
+		indexAtomsPseudoMolUnique.clear();
 		repetitionToProcess = false;
 
 		pseudoMolecule = DefaultChemObjectBuilder.getInstance().newAtomContainer();
@@ -110,6 +110,8 @@ public class PseudoMolecule {
 			duplicateAtomManagement(temp);
 
 		for (IAtomContainer product : products.atomContainers()) { 
+			if ((boolean)product.getProperty(additionalConstants.SPECTATOR) == true)
+				continue;
 			for (IAtom a : product.atoms()) {
 				addAtomInPseudoMolecule(indexAtomsPseudoMolUnique.get(a.getID()).iterator().next(), 0);
 			}
@@ -119,17 +121,18 @@ public class PseudoMolecule {
 			}
 		}
 		for (IAtomContainer reactant : reactants.atomContainers()) { 
+			if ((boolean)reactant.getProperty(additionalConstants.SPECTATOR) == false){
+				for (IAtom a : reactant.atoms()) {
+					//pseudoMolecule.addAtom(reactant.getAtom(j));
+					//indexAtomsReactants.put(reactant.getAtom(j).getID(),reactant.getAtom(j));
+					if (indexAtomsPseudoMolUnique.containsKey(a.getID()) == false) {
+						addAtomInPseudoMolecule(a, 1);
+					}
 
-			for (IAtom a : reactant.atoms()) {
-				//pseudoMolecule.addAtom(reactant.getAtom(j));
-				//indexAtomsReactants.put(reactant.getAtom(j).getID(),reactant.getAtom(j));
-				if (indexAtomsPseudoMolUnique.containsKey(a.getID()) == false) {
-					addAtomInPseudoMolecule(a, 1);
 				}
-
-			}
-			for (IBond b : reactant.bonds()) {
-				addBondInPseudoMolecule(b, 1);
+				for (IBond b : reactant.bonds()) {
+					addBondInPseudoMolecule(b, 1);
+				}
 			}
 		}
 		
@@ -157,8 +160,10 @@ public class PseudoMolecule {
 				indexAtomsPseudoMol.put(atom.getID(), t);
 			}
 
-			if (leaving == 1)
+			if (leaving == 1){
 				leavingAtom.add(atom);
+				atom.setProperty("notInProduct", true);
+			}
 		}
 	}
 
@@ -184,7 +189,7 @@ public class PseudoMolecule {
 			}
 			//at least one atom has to be in product to be consider as a reaction centre
 			if (bond.getProperty(BOND_CHANGE_INFORMATION) != null) {
-				if ((int) bond.getProperty(BOND_CHANGE_INFORMATION) == additionalConstants.BOND_FORMED)
+				if ((int) bond.getProperty(BOND_CHANGE_INFORMATION) == additionalConstants.BOND_MADE)
 					bondFormedList.add(bond);
 				if ((int) bond.getProperty(BOND_CHANGE_INFORMATION) == additionalConstants.BOND_CLEAVED)
 					bondCleavedList.add(bond);	
@@ -279,15 +284,27 @@ public class PseudoMolecule {
 		
 		//Map to correct unbalanced reactions of type substitution idOfSubstituteAtom:idsOfAdjacentAtomsInReactant
 		Map<Integer,List<Integer>> substitutions = new HashMap<Integer,List<Integer>>();
+		
+		//Set of atom involved into cleaved Bonds
+		/**
+		 * Balanced reactions have the same atom in reactants and products. Consequently, the leaving group is not detected,
+		 * if the leaving group is not detected, the algorithm will attempt to find the leaving group by finding 
+		 * the group involved in a cleaved bond but not into a made bond or a made bond with Hydrogen
+		 */
+		Set<IAtom> cleavedAtoms = new HashSet<IAtom>();
+		Set<Integer> reactionCentre = new HashSet<Integer>();
 
-		//merge all reactant and product to find difference
-		IAtomContainer reactants = reaction.getReactants().getAtomContainer(0);
-		IAtomContainer products =  reaction.getProducts().getAtomContainer(0);
+		//merge all reactant and product to find differences
+		IAtomContainer reactants = DefaultChemObjectBuilder.getInstance().newAtomContainer();
+		IAtomContainer products =  DefaultChemObjectBuilder.getInstance().newAtomContainer();
 
 
-		for (int i = 1; i < reaction.getProducts().getAtomContainerCount(); i++) {
+		for (int i = 0; i < reaction.getProducts().getAtomContainerCount(); i++) {
 			IAtomContainer ac = reaction.getProducts().getAtomContainer(i);
 			products.add(ac);
+			for (IAtom atom : ac.atoms()) {
+				atom.setProperty("indexInContainerSet", i);
+			}
 		}
 		
 		//reference atoms index
@@ -308,9 +325,10 @@ public class PseudoMolecule {
 
 			for (int j = 0; j < reactant.getAtomCount(); j++) {
 				IAtom rA = reactant.getAtom(j);
-				indexAtomsInReactants.put(rA.getProperty(CDKConstants.ATOM_ATOM_MAPPING), j);
-				if (!indexAtomsInProducts.containsKey(rA.getProperty(CDKConstants.ATOM_ATOM_MAPPING))) 
+				indexAtomsInReactants.put(rA.getProperty(CDKConstants.ATOM_ATOM_MAPPING), indexAtomsInReactants.keySet().size());
+				if (!indexAtomsInProducts.containsKey(rA.getProperty(CDKConstants.ATOM_ATOM_MAPPING))) {
 					rA.setProperty(additionalConstants.LEAVING_ATOM, true);
+				}
 				else {
 					IAtom pA = products.getAtom(indexAtomsInProducts.get(rA.getProperty(CDKConstants.ATOM_ATOM_MAPPING)));
 					if (rA.getFormalCharge() > pA.getFormalCharge()) {
@@ -322,6 +340,20 @@ public class PseudoMolecule {
 						pA.setProperty(additionalConstants.CHARGE_CHANGE, true);
 						pA.setProperty(additionalConstants.ATOM_CHARGE_CHANGE, additionalConstants.GAIN_ONE_CHARGE);
 
+					}
+					Integer pARadical = pA.getProperty(additionalConstants.RADICAL);
+					Integer rARadical = rA.getProperty(additionalConstants.RADICAL);
+					
+					if (rARadical != null && pARadical != null) {
+						if (rARadical != pARadical) {
+							pA.setProperty(additionalConstants.RADICAL_CHANGE, true);
+						}
+					}
+					else if (rARadical == null && pARadical != null) {
+						pA.setProperty(additionalConstants.RADICAL_CHANGE, true);
+					}
+					else if (rARadical != null && pARadical == null) {
+						pA.setProperty(additionalConstants.RADICAL_CHANGE, true);
 					}
 				}	
 			}
@@ -340,6 +372,8 @@ public class PseudoMolecule {
 						pB.setProperty(additionalConstants.BOND_ORDER_CHANGE, getBondOderChangeProperty(rB.getOrder(), pB.getOrder()));
 						pB.getBegin().setProperty(additionalConstants.REACTION_CENTER, true);
 						pB.getEnd().setProperty(additionalConstants.REACTION_CENTER, true);
+						reactionCentre.add(pB.getBegin().getProperty(CDKConstants.ATOM_ATOM_MAPPING));
+						reactionCentre.add(pB.getEnd().getProperty(CDKConstants.ATOM_ATOM_MAPPING));
 					}
 					if (!rB.getStereo().equals(pB.getStereo())) {
 						pB.setProperty(additionalConstants.BOND_STEREO, true);
@@ -366,8 +400,12 @@ public class PseudoMolecule {
 								for (int atom : adj) {
 									if (indexAtomsInProducts.containsKey(atom)) {
 										isCleaved = true;
+										cleavedAtoms.add(products.getAtom(indexAtomsInProducts.get(atom)));
+										break;
 									}
 								}
+								if (isCleaved)
+									cleavedAtoms.add(products.getAtom(indexAtomsInProducts.get(beginR)));
 							}
 						}
 						else if (indexAtomsInProducts.containsKey(endR)) {
@@ -381,8 +419,12 @@ public class PseudoMolecule {
 								for (int atom : adj) {
 									if (indexAtomsInProducts.containsKey(atom)) {
 										isCleaved = true;
+										cleavedAtoms.add(products.getAtom(indexAtomsInProducts.get(atom)));
+										break;
 									}
 								}
+								if (isCleaved)
+									cleavedAtoms.add(products.getAtom(indexAtomsInProducts.get(endR)));
 							}
 							
 						}
@@ -390,6 +432,8 @@ public class PseudoMolecule {
 							rB.setProperty(BOND_CHANGE_INFORMATION, additionalConstants.BOND_CLEAVED);
 							rB.getBegin().setProperty(additionalConstants.REACTION_CENTER, true);
 							rB.getEnd().setProperty(additionalConstants.REACTION_CENTER, true);
+							reactionCentre.add(rB.getBegin().getProperty(CDKConstants.ATOM_ATOM_MAPPING));
+							reactionCentre.add(rB.getEnd().getProperty(CDKConstants.ATOM_ATOM_MAPPING));
 						}
 						//probable substitution
 						else {
@@ -424,9 +468,7 @@ public class PseudoMolecule {
 					}
 				}
 			}
-			
-			if (i > 0)
-				reactants.add(reactant);
+			reactants.add(reactant);
 		}
 
 		int countBondMapped = reactants.getBondCount();
@@ -436,12 +478,21 @@ public class PseudoMolecule {
 			for (int j = 0; j < product.getBondCount(); j++) {
 				IBond pB = product.getBond(j);
 				if (!indexBondsInReactants.containsKey(pB.getID())) {
-//					System.out.println("formed " + pB.getBegin().getSymbol() + pB.getBegin().getID() + " " +
-//							pB.getEnd().getSymbol() + pB.getEnd().getID() );
 					pB.setProperty(additionalConstants.BOND_BOND_MAPPING, countBondMapped);
-					pB.setProperty(BOND_CHANGE_INFORMATION, additionalConstants.BOND_FORMED);
-					pB.getBegin().setProperty(additionalConstants.REACTION_CENTER, true);
-					pB.getEnd().setProperty(additionalConstants.REACTION_CENTER, true);
+					pB.setProperty(BOND_CHANGE_INFORMATION, additionalConstants.BOND_MADE);
+					IAtom begin = pB.getBegin();
+					IAtom end = pB.getEnd();
+					begin.setProperty(additionalConstants.REACTION_CENTER, true);
+					end.setProperty(additionalConstants.REACTION_CENTER, true);
+					reactionCentre.add(begin.getProperty(CDKConstants.ATOM_ATOM_MAPPING));
+					reactionCentre.add(end.getProperty(CDKConstants.ATOM_ATOM_MAPPING));
+					
+					if (!begin.getSymbol().equals("H") && !end.getSymbol().equals("H")) {
+						if (cleavedAtoms.contains(begin))
+							cleavedAtoms.remove(begin);
+						if (cleavedAtoms.contains(end))
+							cleavedAtoms.remove(end);
+					}
 					countBondMapped++;
 					
 					//correct substitution for unbalanced reactions ex CN(C)C=O.COC1=CC(=C(C=C1)C(O)=O)[N+]([O-])=O>>COC1=CC(=C(C=C1)C(N)=O)[N+]([O-])=O
@@ -492,8 +543,56 @@ public class PseudoMolecule {
 				}
 			}
 		}
+		
+		
+		//annotate atom in the leaving group, which are the atoms involved in a cleaved bond but not in a bond made
+		for (IAtom cleaved : cleavedAtoms) {
+			int indexSet = cleaved.getProperty("indexInContainerSet");
+			for (IAtom pLeaving : reaction.getProducts().getAtomContainer(indexSet).atoms()) {
+				IAtom rLeaving = reactants.getAtom(indexAtomsInReactants.get(pLeaving.getProperty(CDKConstants.ATOM_ATOM_MAPPING)));
+				rLeaving.setProperty(additionalConstants.LEAVING_ATOM, true);
+			}
+		}
+
+		for (int i : reactionCentre) {
+			if (indexAtomsInProducts.containsKey(i)) {
+				IAtom p = products.getAtom(indexAtomsInProducts.get(i));
+				p.setProperty(additionalConstants.REACTION_CENTER, true);
+			}
+			if (indexAtomsInReactants.containsKey(i)) {
+				IAtom r = reactants.getAtom(indexAtomsInReactants.get(i));
+				r.setProperty(additionalConstants.REACTION_CENTER, true);
+			}
+		}
+		
+		//flag agents
+		flagSpectatorMolecules(reaction);
 	}
 	
+	
+	private void flagSpectatorMolecules(IReaction reaction) {
+		for (IAtomContainer ac : reaction.getReactants().atomContainers()) {
+			flagSpectatorMolecules(ac);
+		}
+		for (IAtomContainer ac : reaction.getProducts().atomContainers()) {
+			flagSpectatorMolecules(ac);
+		}
+	}
+	
+	private void flagSpectatorMolecules(IAtomContainer ac) {
+		boolean isAgent = true;
+		for (IAtom atom : ac.atoms()) {
+			if (atom.getProperty(additionalConstants.REACTION_CENTER) != null) {
+				isAgent = false;
+				break;
+			}
+		}
+		if (isAgent){
+			ac.setProperty(additionalConstants.SPECTATOR, true);
+		}
+		else
+			ac.setProperty(additionalConstants.SPECTATOR, false);
+	}
 	
 	/**
 	 * LEFT == OPPOSITE == ANTI_CLOCKWISE == 1

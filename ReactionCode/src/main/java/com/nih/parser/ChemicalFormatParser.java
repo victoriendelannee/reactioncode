@@ -24,7 +24,6 @@ import static java.lang.System.exit;
 import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 import static java.util.logging.Level.WARNING;
-import static org.openscience.cdk.DefaultChemObjectBuilder.getInstance;
 import static org.openscience.cdk.io.IChemObjectReader.Mode.RELAXED;
 
 import java.io.BufferedReader;
@@ -44,9 +43,9 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 import org.openscience.cdk.AtomContainer;
-import org.openscience.cdk.DefaultChemObjectBuilder;
 import org.openscience.cdk.Reaction;
 import org.openscience.cdk.ReactionSet;
+import org.openscience.cdk.DefaultChemObjectBuilder;
 import org.openscience.cdk.exception.CDKException;
 import org.openscience.cdk.exception.InvalidSmilesException;
 import org.openscience.cdk.interfaces.IAtomContainer;
@@ -77,6 +76,8 @@ public class ChemicalFormatParser {
 
 	List<File> files = new ArrayList<File>();
 	int reactionCount;
+	private boolean kekulize;
+	private boolean radicalize = false;
 
 	/**
 	 * Detect the format of the input. It can be a string like SMILES, SMIRKS or ReactionCode and also a file
@@ -309,17 +310,17 @@ public class ChemicalFormatParser {
 	 * Reaction SMILES and SMIRKS parser
 	 * @param file
 	 * @param id
-	 * @param kekule
 	 * @return
 	 * @throws IOException
 	 */
-	public IReactionSet parseReactionSMILES(String file, int id, boolean kekule) throws IOException {
+	public IReactionSet parseReactionSMILES(String file, int id) throws IOException {
 		//List<String> reactionSmiles = new ArrayList<String>();
 		BufferedReader br = new BufferedReader(new FileReader(file)); 
 
 		String smiles; 
-		SmilesParser2 sp = new SmilesParser2(getInstance());
-		sp.kekulise(kekule);
+		SmilesParser2 sp = new SmilesParser2(DefaultChemObjectBuilder.getInstance());
+		sp.kekulise(kekulize);
+		sp.radicalize(radicalize);
 		IReactionSet reactions = DefaultChemObjectBuilder.getInstance().newInstance(IReactionSet.class); 
 		int smilesIndex = id + 1;
 		while ((smiles = br.readLine()) != null) {
@@ -359,11 +360,10 @@ public class ChemicalFormatParser {
 	 * @param file
 	 * @param id
 	 * @param split
-	 * @param kekule
 	 * @return
 	 * @throws IOException
 	 */
-	public IReactionSet parseReactionSMILES(String file, int id, boolean split, boolean kekule) throws IOException {
+	public IReactionSet parseReactionSMILES(String file, int id, boolean split) throws IOException {
 		Path path = Paths.get(file);
 		long lineCount = Files.lines(path).count();
 		
@@ -380,8 +380,9 @@ public class ChemicalFormatParser {
 		BufferedReader br = new BufferedReader(new FileReader(file)); 
 
 		String smiles; 
-		SmilesParser2 sp = new SmilesParser2(getInstance());
-		sp.kekulise(kekule);
+		SmilesParser2 sp = new SmilesParser2(DefaultChemObjectBuilder.getInstance());
+		sp.kekulise(kekulize);
+		sp.radicalize(radicalize);
 		IReactionSet reactions = DefaultChemObjectBuilder.getInstance().newInstance(IReactionSet.class); 
 		int smilesIndex = id + 1;
 		int tempReactionCounter = 0;
@@ -503,12 +504,12 @@ public class ChemicalFormatParser {
 	/**
 	 * Reaction SMILES and SMIRKS parser
 	 * @param reactionSmiles
-	 * @param kekule
 	 * @return
 	 */
-	public IReactionSet parseReactionSMILES(String reactionSmiles, boolean kekule) {
-		SmilesParser2 sp = new SmilesParser2(getInstance());
-		sp.kekulise(kekule);
+	public IReactionSet parseReactionSMILES(String reactionSmiles) {
+		SmilesParser2 sp = new SmilesParser2(DefaultChemObjectBuilder.getInstance());
+		sp.kekulise(kekulize);
+		sp.radicalize(radicalize);
 		String[] smiles = reactionSmiles.split("\\s+");
 		IReactionSet reactions = DefaultChemObjectBuilder.getInstance().newInstance(IReactionSet.class); 
 		int smilesIndex = 1;
@@ -544,11 +545,11 @@ public class ChemicalFormatParser {
 	 * @throws InvalidSmilesException 
 	 */
 	public IAtomContainerSet parseSMILES(String smiles, boolean kekule) throws InvalidSmilesException {
-		SmilesParser2 sp = new SmilesParser2(getInstance());
+		SmilesParser2 sp = new SmilesParser2(DefaultChemObjectBuilder.getInstance());
     	sp.kekulise(kekule);
 
     	String[] smis = smiles.split("\\.");
-		IAtomContainerSet set = getInstance().newInstance(IAtomContainerSet.class);
+		IAtomContainerSet set = DefaultChemObjectBuilder.getInstance().newInstance(IAtomContainerSet.class);
     	for (String reactant : smis) {
     		IAtomContainer rea = sp.parseSmiles(reactant);
     		set.addAtomContainer(rea);
@@ -562,11 +563,11 @@ public class ChemicalFormatParser {
 	 * @return
 	 */
 	public IReaction parseSMILES(String smiles) {
-		SmilesParser2 sp = new SmilesParser2(getInstance());
+		SmilesParser2 sp = new SmilesParser2(DefaultChemObjectBuilder.getInstance());
 		try {
 			IAtomContainer mol = sp.parseSmiles(smiles);
 			try {
-				IReaction parseReactionSmiles = getInstance().newInstance(IReaction.class);
+				IReaction parseReactionSmiles = DefaultChemObjectBuilder.getInstance().newInstance(IReaction.class);
 				parseReactionSmiles.addReactant(mol, 1.0);
 //				LOGGER.error(INFO, "Annotating Reaction " + "smiles");
 				parseReactionSmiles.setID("smiles");
@@ -880,5 +881,14 @@ public class ChemicalFormatParser {
 		}
 		files.add(file);
 	}
+
+	public void kekulize(boolean kekulize) {
+		this.kekulize = kekulize;
+	}
+
+	public void radicalize(boolean radicalize) {
+		this.radicalize = radicalize;
+	}
+	
 	
 }

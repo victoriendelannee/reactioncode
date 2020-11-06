@@ -44,6 +44,7 @@ public class CommandLineOptions {
         options.addOption("n", "onlyPseudoMolecule", false, "Generate only the Pseudo-Molecules");
         options.addOption("a", "alternativeVersion", false, "Alternative version of the ReactionCode");
         options.addOption("r", "norepetiton", false, "To not set the atom repetition in the ReactionCode");
+        options.addOption("z", "radicalize", false, "To dededuce the radicals if a SMIRKS is given (The number of Hydrogens has to be included for each atom and to be correct)");
         options.addOption("e", "examples", false, "Show examples");
         options.addOption("h", "help", false, "Help page for command usage");
 

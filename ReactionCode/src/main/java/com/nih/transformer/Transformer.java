@@ -8,6 +8,7 @@ import static com.nih.reaction.additionalConstants.BOND_STEREO_CHANGE;
 import static org.openscience.cdk.silent.SilentChemObjectBuilder.getInstance;
 
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -52,7 +53,7 @@ public class Transformer {
 	boolean checkValence = true;
 	boolean allPatternsHaveToMatch = true;
 	List<int[]> bondStereoChange = new ArrayList<int[]>();
-	List<IBitFingerprint> productFP = new ArrayList<IBitFingerprint>();
+	List<BitSet> productFP = new ArrayList<BitSet>();
 	// store molecule, which doen't match with at least one pattern
 	List<IAtomContainer> reagentsList = new ArrayList<IAtomContainer>();
 	//will change if at least one bond is UNSET
@@ -76,6 +77,7 @@ public class Transformer {
 			for (IAtom atom : ac.atoms()) {
 				atom.removeProperty(CDKConstants.ATOM_ATOM_MAPPING);
 				atom.setID(cpt + "");
+				// atom.setProperty(CDKConstants.ATOM_ATOM_MAPPING, cpt);
 				cpt++;
 			}
 			products.addAtomContainer(ac);
@@ -126,7 +128,7 @@ public class Transformer {
 		// save AAM savemapping[index] = AAM integer
 		// int[] savemapping = saveMapping(aggregateProducts);
 		// reset list
-		productFP = new ArrayList<IBitFingerprint>();
+		productFP = new ArrayList<BitSet>();
 
 		List<IReaction> results = new ArrayList<IReaction>();
 		// get all possible reactants combinations matching with smarts
@@ -158,7 +160,6 @@ public class Transformer {
 			List<Map<IAtom, IAtom>> result = new ArrayList<Map<IAtom, IAtom>>();
 			for (Mappings mapping : combination) {
 				// convert Iterable to List
-				// TODO improve filtering mapping (get all possible mappings related to atoms
 				// involved in the reaction center)
 				mapping.uniqueAtoms().toAtomMap().forEach(result::add);
 			}
@@ -176,9 +177,11 @@ public class Transformer {
 		// get all possible combination
 		List<List<Integer>> sols = new ArrayList<List<Integer>>();
 		GenerateAllCombinationsFromMultipleLists(indexOfTheMaps, sols, 0, new ArrayList<Integer>(), false);
+
 		List<IAtomContainer> reactantToAdd = new ArrayList<IAtomContainer>();
 		boolean validMappingSolution = false;
 		for (int i = 0; i < sols.size(); i++) {
+			// reset mapping
 			resetMappingAndBondChangeInfo(aggregateProducts);
 			List<Integer> solution = sols.get(i);
 			// attribute atom atom mapping to atom in aggregatesproducts
@@ -230,7 +233,9 @@ public class Transformer {
 					reactantsCopy.addAtomContainer(ac.clone());
 				}
 				annotateStereochange(reactantsCopy, newAggregateProducts);
+
 				IAtomContainerSet products = FragmentUtils.makeAtomContainerSet(newAggregateProducts);
+
 				if (checkValence) {
 					if (!tools.checkProductValidity(products)) {
 						continue;
@@ -373,12 +378,13 @@ public class Transformer {
 	private boolean checkProductDuplicate(IAtomContainerSet set) {
 		if (!set.isEmpty()) {
 			// Calculate FP and check if the product was already generated
-			CircularFingerprinter fp = new CircularFingerprinter();
+
 			for (IAtomContainer ac : set.atomContainers()) {
 				try {
+					CircularFingerprinter fp = new CircularFingerprinter();
 					fp.calculate(ac);
 					IBitFingerprint bfp = fp.getBitFingerprint(ac);
-					if (productFP.contains(bfp))
+					if (productFP.contains(bfp.asBitSet()))
 						return false;
 				} catch (CDKException e) {
 					// TODO Auto-generated catch block
@@ -532,6 +538,34 @@ public class Transformer {
 			}
 		}
 		return possibilities2;
+	}
+
+	/**
+	 * Return all possible combinations (those combining all SMARTS, ex L1,L5,L3;
+	 * L1,L7,L6; L4,L7,L2) (cf tab in findCompatibleSmarts) A valid combination is a
+	 * combination, where each reactant is associated with one SMARTS result =
+	 * [[L1,L5,L3,] [L1,L7,L6], [L4,L7,L2]]
+	 * 
+	 * @param possibilities
+	 * @return
+	 */
+	private List<List<Mappings>> getCompatibleMappingAssociation(Mappings[][] possibilities) {
+		int numberOfPatterns = possibilities[0].length;
+		List<List<Mappings>> combinations = new ArrayList<List<Mappings>>();
+		for (int i = 0; i < numberOfPatterns; i++) {
+			if (i == 0) {
+				List<Mappings> combination = new ArrayList<Mappings>();
+				combinations.add(combination);
+			}
+			for (int j = 0; j < possibilities.length; j++) {
+				if (possibilities[j][i] != null) {
+					for (List<Mappings> combination : combinations) {
+						combination.add(possibilities[j][i]);
+					}
+				}
+			}
+		}
+		return combinations;
 	}
 
 	// take hydrogen count(explicit and Implicit), charge bond order, bond
@@ -843,6 +877,8 @@ public class Transformer {
 			}
 			if (type.equals(Expr.Type.IS_AROMATIC) || type.equals(Expr.Type.AROMATIC_ELEMENT)) {
 				toModify.setIsAromatic(true);
+				toModify.getBegin().setIsAromatic(true);
+				toModify.getEnd().setIsAromatic(true);
 				if (toModify.getOrder().equals(IBond.Order.UNSET))
 					toModify.setOrder(IBond.Order.SINGLE);
 			} else
@@ -922,6 +958,8 @@ public class Transformer {
 		}
 		if (exprs.containsKey(Expr.Type.IS_AROMATIC)) {
 			newBond.setIsAromatic(true);
+			newBond.getBegin().setIsAromatic(true);
+			newBond.getEnd().setIsAromatic(true);
 			newBond.setOrder(IBond.Order.SINGLE);
 		}
 		if (exprs.containsKey(Expr.Type.STEREOCHEMISTRY)) {
@@ -1172,12 +1210,17 @@ public class Transformer {
 		// correct hydrogen for atom involve in a bond made or broken
 		for (IAtom atom : aggregate.atoms()) {
 			if (atom.getProperty(BOND_CHANGE_INFORMATION) != null) {
+				//System.out.println(atom.getProperty(BOND_CHANGE_INFORMATION) + " " +atom); 
 				if (atom.getProperty(BOND_CHANGE_INFORMATION).equals(BOND_MADE)
 						|| atom.getProperty(BOND_CHANGE_INFORMATION).equals(BOND_CLEAVED)
 						|| atom.getProperty(BOND_CHANGE_INFORMATION).equals(BOND_ORDER_CHANGE)) {
+	    			tools.caclulateHydrogen(aggregate, atom, kekulized);
+	    			//OLD Method
+	    			/*
 					int hCount = tools.caclulateHydrogen(aggregate, atom, kekulized);
 					if (hCount > -1)
 						atom.setImplicitHydrogenCount(hCount);
+					*/
 				}
 			}
 		}
@@ -1233,6 +1276,27 @@ public class Transformer {
 			}
 		}
 	}
+	// the new method take the id and assign it as AAM
+	/*
+	 * public void mappingReattribution(IReaction reaction) { //old mapping new
+	 * mapping Map<Integer,Integer> aam = new TreeMap<Integer,Integer>();
+	 * 
+	 * for (IAtomContainer ac : reaction.getReactants().atomContainers()) { for
+	 * (IAtom atom : ac.atoms()) {
+	 * aam.put(atom.getProperty(CDKConstants.ATOM_ATOM_MAPPING), -1); } } int
+	 * counter = 1; for (Entry<Integer,Integer> e : aam.entrySet()) { int i =
+	 * e.getKey(); aam.put(i, counter); counter++; } for (IAtomContainer ac :
+	 * reaction.getReactants().atomContainers()) { for (IAtom atom : ac.atoms()) {
+	 * int newAam = aam.get(atom.getProperty(CDKConstants.ATOM_ATOM_MAPPING));
+	 * atom.setProperty(CDKConstants.ATOM_ATOM_MAPPING, newAam); } } for
+	 * (IAtomContainer ac : reaction.getProducts().atomContainers()) { for (IAtom
+	 * atom : ac.atoms()) { Integer oldAam =
+	 * atom.getProperty(CDKConstants.ATOM_ATOM_MAPPING); if (oldAam == null) {
+	 * atom.setProperty(CDKConstants.ATOM_ATOM_MAPPING, counter); counter++; } else
+	 * if (!aam.containsKey(oldAam)){
+	 * atom.setProperty(CDKConstants.ATOM_ATOM_MAPPING, counter); counter++; } else
+	 * atom.setProperty(CDKConstants.ATOM_ATOM_MAPPING, aam.get(oldAam)); } } }
+	 */
 
 	// function to find minimum value in an unsorted
 	// list in Java using Collection

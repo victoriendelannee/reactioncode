@@ -1,7 +1,8 @@
 package com.nih.tools;
 
-import org.openscience.cdk.AtomContainer;
+
 import org.openscience.cdk.interfaces.IAtomContainer;
+import org.openscience.cdk.silent.AtomContainer;
 
 public class Clone {
 	

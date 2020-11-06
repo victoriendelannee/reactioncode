@@ -2,7 +2,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.nih.gov</groupId>
   <artifactId>ReactionCode</artifactId>
-  <version>1.1.0</version>
+  <version>1.2.0</version>
   <packaging>jar</packaging>
     <properties>
         <jdk.version>1.8</jdk.version>
@@ -121,6 +121,11 @@
   		<artifactId>commons-io</artifactId>
   		<version>1.3.2</version>
   	</dependency>
+  	<dependency>
+  		<groupId>org.openscience.cdk</groupId>
+  		<artifactId>cdk-inchi</artifactId>
+  		<version>2.3</version>
+  	</dependency>
   </dependencies>
   
   <profiles>
@@ -154,9 +159,10 @@
                                 <exclude>**/main/TestEncoder.java</exclude>
                                 <exclude>**/main/TestMapping.java</exclude>
                                 <exclude>**/main/TestTransformer.java</exclude>
+                                <exclude>**/main/Tests.java</exclude>
                                 <exclude>**/mapping/Mapping.java</exclude>
                                 <exclude>**/tools/Clone.java</exclude>
-                                <exclude>**/tools/Kekulization2.java</exclude>
+                                <exclude>**/transformer/Transformer2.java</exclude>
                                 <exclude>**/writer/MDLV2000WriterOld.java</exclude>
                             </excludes>
                         </configuration>
@@ -184,9 +190,10 @@
                                 <exclude>**/main/TestEncoder.java</exclude>
                                 <exclude>**/main/TestMapping.java</exclude>
                                 <exclude>**/main/TestTransformer.java</exclude>
+                                <exclude>**/main/Tests.java</exclude>
                                 <exclude>**/mapping/Mapping.java</exclude>
                                 <exclude>**/tools/Clone.java</exclude>
-                                <exclude>**/tools/Kekulization2.java</exclude>
+                                <exclude>**/transformer/Transformer2.java</exclude>
                                 <exclude>**/writer/MDLV2000WriterOld.java</exclude>
                             </excludes>
                         </configuration>
@@ -235,9 +242,10 @@
                                 <exclude>**/TestEncoder.java</exclude>
                                 <exclude>**/TestMapping.java</exclude>
                                 <exclude>**/TestTransformer.java</exclude>
+                                <exclude>**/main/Tests.java</exclude>
                                 <exclude>**/Mapping.java</exclude>
                                 <exclude>**/Clone.java</exclude>
-                                <exclude>**/Kekulization2.java</exclude>
+                                <exclude>**/transformer/Transformer2.java</exclude>
                                 <exclude>**/MDLV2000WriterOld.java</exclude>
                             </excludes>
                         </configuration>
@@ -265,9 +273,10 @@
                                 <exclude>**/main/TestEncoder.java</exclude>
                                 <exclude>**/main/TestMapping.java</exclude>
                                 <exclude>**/main/TestTransformer.java</exclude>
+                                <exclude>**/main/Tests.java</exclude>
                                 <exclude>**/mapping/Mapping.java</exclude>
                                 <exclude>**/tools/Clone.java</exclude>
-                                <exclude>**/tools/Kekulization2.java</exclude>
+                                <exclude>**/transformer/Transformer2.java</exclude>
                                 <exclude>**/writer/MDLV2000WriterOld.java</exclude>
                             </excludes>
                         </configuration>

@@ -822,7 +822,7 @@ public class MDLV2000Writer extends DefaultChemObjectWriter {
             	   if ((int)bond.getProperty(BOND_CHANGE_INFORMATION) == additionalConstants.BOND_CLEAVED) {
             		   centerStatusValue += 6;
             	   }
-            	   else if ((int)bond.getProperty(BOND_CHANGE_INFORMATION) == additionalConstants.BOND_FORMED) {
+            	   else if ((int)bond.getProperty(BOND_CHANGE_INFORMATION) == additionalConstants.BOND_MADE) {
             		   centerStatusValue += 8;
             	   }
             	   else if ((int)bond.getProperty(BOND_CHANGE_INFORMATION) == additionalConstants.BOND_ORDER) {

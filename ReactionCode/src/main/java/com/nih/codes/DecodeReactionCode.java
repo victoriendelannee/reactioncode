@@ -27,10 +27,11 @@ import static com.nih.reaction.additionalConstants.STEREO_TYPE;
 import static org.openscience.cdk.isomorphism.matchers.Expr.Type.TRUE;
 
 import org.openscience.cdk.silent.Atom;
+import org.openscience.cdk.Bond;
 import org.openscience.cdk.CDKConstants;
 import org.openscience.cdk.Reaction;
+import org.openscience.cdk.SingleElectron;
 import org.openscience.cdk.DefaultChemObjectBuilder;
-import org.openscience.cdk.aromaticity.Kekulization;
 import org.openscience.cdk.exception.CDKException;
 import org.openscience.cdk.interfaces.IAtom;
 import org.openscience.cdk.interfaces.IAtomContainer;
@@ -40,8 +41,10 @@ import org.openscience.cdk.interfaces.IChemObject;
 import org.openscience.cdk.interfaces.IDoubleBondStereochemistry;
 import org.openscience.cdk.interfaces.IReaction;
 import org.openscience.cdk.interfaces.IReactionSet;
+import org.openscience.cdk.interfaces.ISingleElectron;
 import org.openscience.cdk.interfaces.IStereoElement;
 import org.openscience.cdk.interfaces.ITetrahedralChirality;
+import org.openscience.cdk.interfaces.IBond.Display;
 import org.openscience.cdk.isomorphism.matchers.Expr;
 import org.openscience.cdk.isomorphism.matchers.IQueryAtomContainer;
 import org.openscience.cdk.isomorphism.matchers.QueryAtom;
@@ -61,8 +64,10 @@ import org.openscience.cdk.tools.periodictable.PeriodicTable;
 
 import com.google.common.base.Splitter;
 import com.nih.fragments.FragmentUtils;
+import com.nih.reaction.additionalConstants;
 import com.nih.tools.ElementCalculation;
-import com.nih.tools.tools;
+import com.nih.tools.HydrogenAdder;
+import com.nih.tools.Kekulization2;
 
 public class DecodeReactionCode {
 	
@@ -70,7 +75,12 @@ public class DecodeReactionCode {
 	String cReactionCode;
 	boolean addHydrogenForLastLayer = true;
 	boolean calculateExpr = false;
+	boolean kekulize = true;
+	boolean correctProducts = true;
+	boolean atomNotInProductsSet = false;
 	int maxDepth;
+	
+	private List<Integer> atomNotInProducts;
 
 	private HashMap<String,Integer> reverseConnectionTableAlphabet = new HashMap<String,Integer>();
 	private Set<IAtom> reactionCenter = new HashSet<IAtom>();
@@ -86,6 +96,14 @@ public class DecodeReactionCode {
 	public DecodeReactionCode() {
 //		reverseConnectionTableAlphabet = makereverseConnectionTableAlphabet();
 //		periodicTable = new PeriodicTable();
+		this.atomNotInProducts = new ArrayList<Integer>();
+	}
+	
+	public DecodeReactionCode(Set<Integer> atomNotInPro) {
+//		reverseConnectionTableAlphabet = makereverseConnectionTableAlphabet();
+//		periodicTable = new PeriodicTable();
+		this.atomNotInProducts = new ArrayList<Integer>(atomNotInPro);
+		this.atomNotInProductsSet = true;
 	}
 	
 	/**
@@ -108,7 +126,6 @@ public class DecodeReactionCode {
 	 */
 	public IReactionSet makeReactions(List<String> reactionCodes) throws CDKException, CloneNotSupportedException {
 		init();
-
 		IReactionSet reactions = DefaultChemObjectBuilder.getInstance().newInstance(IReactionSet.class);
 		idReaction = 0;
 		for (String reactionCode : reactionCodes) {
@@ -143,35 +160,49 @@ public class DecodeReactionCode {
 		reaction.setProperty("bondsFormed", bondsFormed);
 		reaction.setProperty("bondsOrder", bondsOrder);
 		//generate coordinates
-		try {
-			cleanReaction(reaction);
-		} catch (CDKException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
+		cleanReaction(reaction, code);
+	
 	return reaction; 
 	}
 	
+
 	/**
-	 * generate coordinates
-	 * @param mol
-	 * @return
-	 * @throws CDKException
+	 * @param reaction
+	 * @param reactionCode
 	 */
-	private void cleanReaction(IReaction reaction) throws CDKException {
+	private void cleanReaction(IReaction reaction, String reactionCode) {
 		//use StructureDiagramGenerator2 because StructureDiagramGenerator modify the stereo and can remove it
 		StructureDiagramGenerator2 sdg = new StructureDiagramGenerator2();
 		for (IAtomContainer mol : reaction.getAgents().atomContainers()) {
 			sdg.setMolecule(mol, false);
-			sdg.generateCoordinates();
+			try {
+				sdg.generateCoordinates();
+			} catch (Exception ignore) {
+				// TODO Auto-generated catch block
+				//e.printStackTrace();
+				errors.add(idReaction + "\t Error while generating Coordinates \t" + reactionCode + "\n");
+				continue;
+			}
 		}
 		for (IAtomContainer mol : reaction.getReactants().atomContainers()) {
 			sdg.setMolecule(mol, false);
-			sdg.generateCoordinates();
+			try {
+				sdg.generateCoordinates();
+			} catch (Exception ignore) {
+				//e.printStackTrace();
+				errors.add(idReaction + "\t Error while generating Coordinates \t" + reactionCode + "\n");
+				continue;
+			}
 		}
 		for (IAtomContainer mol : reaction.getProducts().atomContainers()) {
 			sdg.setMolecule(mol, false);
-			sdg.generateCoordinates();
+			try {
+				sdg.generateCoordinates();
+			} catch (Exception ignore) {
+				//e.printStackTrace();
+				errors.add(idReaction + "\t Error while generating Coordinates \t" + reactionCode + "\n");
+				continue;
+			}
 		}
 	}
 	
@@ -180,7 +211,6 @@ public class DecodeReactionCode {
 	 * @return
 	 */
 	private IQueryAtomContainer makePseudoMolecule(String code) {
-		
 		IQueryAtomContainer pseudoMolecule = new QueryAtomContainer(DefaultChemObjectBuilder.getInstance());
 		Map<Integer,IAtom> atomIndex = new HashMap<Integer,IAtom>();
 		
@@ -195,13 +225,14 @@ public class DecodeReactionCode {
 			return null;
 		}
 		int leavingFirstIndex = -1;
-		
+		List<IAtom> tempLeaving = new ArrayList<IAtom>();
 		for (int currentLayerDepth = 0; currentLayerDepth < layers.length; currentLayerDepth++) {
 			maxDepth = currentLayerDepth;
 			String layer = layers[currentLayerDepth];
 			boolean staying = Character.isDigit(layer.charAt(0)) ? true : false;
 			
-			if (layer.charAt(0) == 'A' && leavingFirstIndex == -1) {
+			char depth = layer.charAt(0);
+			if (depth == 'A' && leavingFirstIndex == -1) {
 				leavingFirstIndex = atomIndex.size();
 			}
 			
@@ -216,6 +247,7 @@ public class DecodeReactionCode {
 			Map<Integer,String> charges = new HashMap<Integer,String>();
 			Map<Integer,String> stereoInfo = new HashMap<Integer,String>();
 			Map<Integer,String> isotopes = new HashMap<Integer,String>();
+			Map<Integer,String> radicals = new HashMap<Integer,String>();
 			
 			//get specific properties of atoms and bonds 
 			for (String subLayer : subLayers) {
@@ -249,6 +281,16 @@ public class DecodeReactionCode {
 						isotopes.put(index, isotope);
 					}
 				}
+				if (subLayer.charAt(0) == 'r') {
+					subLayer = subLayer.substring(1);
+					//String[] properties = subLayer.split(";");
+					Iterable<String> properties = Splitter.fixedLength(4).split(subLayer);
+					for (String property : properties) {
+						int index = Integer.parseInt(property.substring(0, 2));
+						String radical =  property.substring(2);
+						radicals.put(index, radical);
+					}
+				}
 			}
 			
 //			System.out.println("charges " + charges);
@@ -274,11 +316,21 @@ public class DecodeReactionCode {
 				atom.setProperty("depth", currentLayerDepth);
 				atom.setFormalCharge(0);
 				
+				if (currentLayerDepth == 0 && !atomNotInProductsSet) {
+					int status = atom.getProperty("status");
+					if (status == 7) 
+						tempLeaving.add(atom);
+				}
+				
+				//used later to correct products
+				if (leavingFirstIndex > 0)
+					atomNotInProducts.add(atom.getProperty(CDKConstants.ATOM_ATOM_MAPPING));
+				
 				if (charges.containsKey(cpt)) {
 					String charge = charges.get(cpt);
-					int inPro = decodeChargeAndIsotope(charge.charAt(1)+"");
+					int inPro = decodeChargeRadicalAndIsotope(charge.charAt(1)+"");
 					atom.setFormalCharge(inPro);
-					atom.setProperty("chargeInReactant", decodeChargeAndIsotope(charge.charAt(0)+""));
+					atom.setProperty("chargeInReactant", decodeChargeRadicalAndIsotope(charge.charAt(0)+""));
 					atom.setProperty("chargeInProduct", inPro);
 				}
 				if (stereoInfo.containsKey(cpt)) {
@@ -290,10 +342,23 @@ public class DecodeReactionCode {
 				}
 				if (isotopes.containsKey(cpt)) {
 					String isotope = isotopes.get(cpt);
-					int inPro = decodeChargeAndIsotope(isotope.charAt(1)+"");
+					int inPro = decodeChargeRadicalAndIsotope(isotope.charAt(1)+"");
 					atom.setMassNumber(ElementCalculation.calculateMass(atom.getSymbol()) + inPro);
-					atom.setProperty("isotopeInReactant", decodeChargeAndIsotope(isotope.charAt(0)+""));
+					atom.setProperty("isotopeInReactant", decodeChargeRadicalAndIsotope(isotope.charAt(0)+""));
 					atom.setProperty("isotopeInProduct", inPro);
+				}
+				if (radicals.containsKey(cpt)) {
+					String radical = radicals.get(cpt);
+					int inPro = decodeChargeRadicalAndIsotope(radical.charAt(1)+"");
+					for (int j = 0; j < inPro; j++) {
+						ISingleElectron se = new SingleElectron(atom);
+						pseudoMolecule.addSingleElectron(se);
+						//pseudoMolecule.addSingleElectron(pseudoMolecule.getBuilder().newInstance(SingleElectron.class,
+                         //       radical));
+                    }
+					atom.setProperty(additionalConstants.RADICAL, inPro);
+					atom.setProperty("radicalInReactant", decodeChargeRadicalAndIsotope(radical.charAt(0)+""));
+					atom.setProperty("radicalInProduct", inPro);
 				}
 				//Determine reaction centre status
 				if (Integer.parseInt(atomCode.substring(0, 1)) > 0) {
@@ -304,15 +369,12 @@ public class DecodeReactionCode {
 				}
 				atom.setProperty("repetition", repetition);
 				atomIndex.put(pseudoMolecule.getAtomCount(), atom);
-//				System.out.println(atom);
-//				System.out.println(atom.getProperties());
 				pseudoMolecule.addAtom(atom);
 				cpt++;
 				
 				for (int i = 0; i < bondsCode.length(); i += 4) {
 					String orders = bondsCode.substring(i, i+2);
 					String position = bondsCode.substring(i+2, i+4);
-//					System.out.println("orders " + orders + " position " + position);
 					QueryBond bond = new QueryBond(DefaultChemObjectBuilder.getInstance());
 					if (staying) {
 						if (position.equals("00")) {
@@ -372,9 +434,21 @@ public class DecodeReactionCode {
 							? bond.getBegin().getProperty("repetition") : bond.getEnd().getProperty("repetition");
 					bond.setProperty("repetition", bondRepetition);
 					
+					if (depth == 'A' && !atomNotInProductsSet) {
+						IAtom leavingInRC = bond.getAtom(0);
+						atomNotInProducts.add(leavingInRC.getProperty(CDKConstants.ATOM_ATOM_MAPPING));
+					}
+					if (depth == '1' && !atomNotInProductsSet) {
+						IAtom notLeavingInRC = bond.getAtom(0);
+						atomNotInProducts.remove(notLeavingInRC.getProperty(CDKConstants.ATOM_ATOM_MAPPING));
+					}
 					pseudoMolecule.addBond(bond);
 					cpt++;
 				}
+			}
+			for (IAtom leavingInRC : tempLeaving) {
+				if (pseudoMolecule.getConnectedBondsCount(leavingInRC) == 0)
+					atomNotInProducts.remove(leavingInRC.getProperty(CDKConstants.ATOM_ATOM_MAPPING));
 			}
 		}
 		
@@ -427,11 +501,14 @@ public class DecodeReactionCode {
 		
 		Map<QueryAtom,List<QueryAtom>> repeatedAtoms = new HashMap<QueryAtom,List<QueryAtom>>();
 		
+		boolean hasRadicals = pseudoMolecule.getSingleElectronCount() > 0 ? true : false;
+
 		for (IAtom iatom : pseudoMolecule.atoms()) {
 			QueryAtom atom = (QueryAtom) iatom;
 			int repetition = (int)((double)atom.getProperty("repetition"));
 			aggregateReactants.addAtom(atom);
 			aggregateProducts.addAtom(atom);
+			
 			//if (repetition > 1) {
 				List<QueryAtom> atoms = new ArrayList<QueryAtom>();
 				atoms.add(atom);
@@ -577,6 +654,9 @@ public class DecodeReactionCode {
 			if (a.getProperty("isotopeInReactant") != null) {
 				a.setMassNumber(ElementCalculation.calculateMass(a.getSymbol()) + (int)a.getProperty("isotopeInReactant"));
 			}
+			if (a.getProperty("radicalInReactant") != null) {
+				a.setProperty(additionalConstants.RADICAL, a.getProperty("radicalInReactant"));
+			}
 		}
 		
 		//make index
@@ -602,32 +682,46 @@ public class DecodeReactionCode {
 			}
 		}
 		catch (Exception e) {
-			
+			errors.add(idReaction + "\t can't configure stereo \t" + cReactionCode + "\n");
 		}
+		
+		//try to correct products
+		if (correctProducts)
+			productsCorrection(aggregateProducts, index);
+		else
+			removeLeagingGroups(aggregateProducts);
 		
 		//kekulize
-		boolean kekulized = false;
-		try {
-			Kekulization.kekulize(aggregateReactants);
-			Kekulization.kekulize(aggregateProducts);
-			kekulized = true;
+		boolean kekulizeR = true;
+		boolean kekulizeP = true;
+		if (kekulize) {
+			if (!Kekulization2.kekulize(aggregateReactants))
+				kekulizeR = false;
+			if (!Kekulization2.kekulizeUsingReference(aggregateReactants, aggregateProducts)) 
+				kekulizeP = false;
+			if (!kekulizeR || !kekulizeP) 
+				errors.add(idReaction + "\t can't be kekulized \t" + cReactionCode + "\n");
 		}
-		catch (Exception e) {
-			errors.add(idReaction + "\t can't be kekulized \t" + cReactionCode + "\n");
+		else {
+			kekulizeR = false;
+			kekulizeP = false;
 		}
-		
+
+				
 		//configureAtomAndType 
 		AtomContainerManipulator.percieveAtomTypesAndConfigureAtoms(aggregateReactants);
+		//kekulize parameter has been change to false because if the ring is not closed, the attributed
+		//bond order can be wrong and the number of hydrogens will be wrong too
 		if (addHydrogenForLastLayer)
-			tools.addMissingHydrogen(aggregateReactants, -1, kekulized);
+			HydrogenAdder.addMissingHydrogen(aggregateReactants, -1, kekulizeR);
 		else
-			tools.addMissingHydrogen(aggregateReactants, maxDepth, kekulized);
+			HydrogenAdder.addMissingHydrogen(aggregateReactants, maxDepth, kekulizeR);
 
 		AtomContainerManipulator.percieveAtomTypesAndConfigureAtoms(aggregateProducts);
 		if (addHydrogenForLastLayer)
-			tools.addMissingHydrogen(aggregateProducts, -1, kekulized);
+			HydrogenAdder.addMissingHydrogen(aggregateProducts, -1, kekulizeP);
 		else
-			tools.addMissingHydrogen(aggregateProducts, maxDepth, kekulized);
+			HydrogenAdder.addMissingHydrogen(aggregateProducts, maxDepth, kekulizeP);
 		
 		//Calculate Expr used for transformer
 		if (calculateExpr) {
@@ -648,6 +742,9 @@ public class DecodeReactionCode {
 		for (IAtomContainer ac : products.atomContainers()) {
 			reaction.setReactantCoefficient(ac, 1.0);
 		}
+		
+		if (hasRadicals)
+			addSingleElectron(reaction); 
 		
 		if (pseudoMolecule.getProperty("mappingError") != null) {
 			reaction.setProperty("mappingError", true);
@@ -792,7 +889,7 @@ public class DecodeReactionCode {
 	 * @param chargeOrMass
 	 * @return
 	 */
-	private int decodeChargeAndIsotope(String chargeOrMass) {
+	private int decodeChargeRadicalAndIsotope(String chargeOrMass) {
 		int chargeDecoded = 0;
 		if (chargeOrMass.equals("1")) {
 			chargeDecoded = -17;
@@ -975,6 +1072,37 @@ public class DecodeReactionCode {
 	}
 	
 	/**
+	 * @param reaction
+	 */
+	private void addSingleElectron(IReaction reaction) {
+		for (IAtomContainer reactant : reaction.getReactants().atomContainers()) {
+			addSingleElectron(reactant);
+		}
+		for (IAtomContainer agent : reaction.getAgents().atomContainers()) {
+			addSingleElectron(agent);
+		}
+		for (IAtomContainer product : reaction.getProducts().atomContainers()) {
+			addSingleElectron(product);
+		}
+	}
+	
+	/**
+	 * @param ac
+	 * @param singleElecronCount
+	 */
+	private void addSingleElectron(IAtomContainer ac) {
+		for (IAtom atom : ac.atoms()) {
+			int singleElecronCount = atom.getProperty(additionalConstants.RADICAL) == null ? 0 : atom.getProperty(additionalConstants.RADICAL);
+			for (int j = 0; j < singleElecronCount; j++) {
+				ISingleElectron se = new SingleElectron(atom);
+				ac.addSingleElectron(se);
+				//ac.addSingleElectron(ac.getBuilder().newInstance(SingleElectron.class,
+                //       atom));
+	        }
+		}
+	}
+	
+	/**
 	 * @param ac
 	 * @param stereocenter
 	 * @param propertyName
@@ -1118,24 +1246,61 @@ public class DecodeReactionCode {
 			}
 			else if (type.equals("ATOM")) {
 				List<IAtom> ligands2 = ac.getConnectedAtomsList((IAtom)focus);
+				List<IAtom> ligands3 = new ArrayList<IAtom>();
+				IBond.Stereo stereo = null;
 				if (configuration.contains("TH")) {
 					IAtom[] newLigands = new IAtom[4];
+					//getting the atom which is look at, (first atom in array
+					for (IAtom other : ligands2) {
+						IBond stereoBond = ac.getBond((IAtom) focus, other);
+						
+						if (stereoBond.getStereo() != IBond.Stereo.NONE) {
+							stereo = stereoBond.getStereo();
+							ligands3.add(0, other);
+						}
+						else
+							ligands3.add(other);
+					}
 					// there is an implicit hydrogen (or lone-pair), the central atom is added
 					if (ligands2.size() == 3) {
-						for (int i = 0; i < ligands2.size(); i++) {
-							newLigands[i] = ligands2.get(i);
+						for (int i = 0; i < ligands3.size(); i++) {
+							newLigands[i] = ligands3.get(i);
 						}
 						newLigands[3] = (IAtom)focus;
 					}
 					else if (ligands2.size() == 4) {
-						newLigands = ligands2.toArray(newLigands);
+						newLigands = ligands3.toArray(newLigands);
 					}
 					if (configuration.equals("@TH1") && ligands2.size() > 2) {
+						//invert (fix wrong stereo
+						if (stereo.equals(IBond.Stereo.UP)) {
+							IAtom save = newLigands[0];
+							if (ligands2.size() == 3) {
+								newLigands[0]=newLigands[3];
+								newLigands[3]=save;
+							}
+							else {
+								newLigands[0]=newLigands[4];
+								newLigands[4]=save;
+							}
+						}
 						ac.addStereoElement(
 								new TetrahedralChirality((IAtom)focus, newLigands, 
 										ITetrahedralChirality.Stereo.ANTI_CLOCKWISE));
 					}
 					else if (configuration.equals("@TH2") && ligands2.size() > 2) {
+						//invert (fix wrong stereo
+						if (stereo.equals(IBond.Stereo.DOWN)) {
+							IAtom save = newLigands[0];
+							if (ligands2.size() == 3) {
+								newLigands[0]=newLigands[3];
+								newLigands[3]=save;
+							}
+							else {
+								newLigands[0]=newLigands[4];
+								newLigands[4]=save;
+							}
+						}
 						ac.addStereoElement(
 								new TetrahedralChirality((IAtom)focus, newLigands, 
 										ITetrahedralChirality.Stereo.CLOCKWISE));
@@ -1307,6 +1472,140 @@ public class DecodeReactionCode {
 	}
 	
 	/**
+	 * Remove he leaving product (the one contain the the leaving group
+	 * @param aggregateProducts
+	 * @param index
+	 */
+	private void removeLeagingGroups(IAtomContainer aggregateProducts) {
+		Set<IBond> toRemove = new HashSet<IBond>();
+		Set<IAtom> toRemove2 = new HashSet<IAtom>();
+		for (IAtom atom : aggregateProducts.atoms()) {
+			if (atomNotInProducts.contains(atom.getProperty(CDKConstants.ATOM_ATOM_MAPPING))) {
+				for (IBond bond : aggregateProducts.getConnectedBondsList(atom)) {
+					IAtom begin = bond.getBegin();
+					IAtom end = bond.getEnd();
+					if (atomNotInProducts.contains(begin.getProperty(CDKConstants.ATOM_ATOM_MAPPING))
+							&& atomNotInProducts.contains(end.getProperty(CDKConstants.ATOM_ATOM_MAPPING))) {
+						toRemove.add(bond);
+					}
+				}
+				toRemove2.add(atom);
+			}
+		}
+		for (IBond b : toRemove) {
+			aggregateProducts.removeBond(b);
+		}
+		for (IAtom a : toRemove2) {
+			aggregateProducts.removeAtom(a);
+		}
+	}
+	
+	/**
+	 * Try to correct products. For unbalanced reactions, some bond made can be missing in the products.
+	 * This function will find bonds, where both atoms are involved into a cleaved bond (both atoms are
+	 * not hydrogen). Then, it will make a bond between both other atoms not involved in the bond 
+	 * already made
+	 * @param aggregateProducts
+	 */
+	private void productsCorrection(IAtomContainer aggregateProducts, Map<String, IAtom> index) {
+		//if atomNotInProducts is empty, it means there is no leaving layers, the reaction is balanced
+		if (atomNotInProducts.isEmpty())
+			return;
+		Map<Integer,Set<IBond>> atomsInvolvedInABondCleaved = new HashMap<Integer,Set<IBond>>();
+		for (IBond bond : bondsCleaved) {
+			IAtom a1 = bond.getBegin();
+			int aam1 = a1.getProperty(CDKConstants.ATOM_ATOM_MAPPING);
+			IAtom a2 = bond.getEnd();
+			int aam2 = a2.getProperty(CDKConstants.ATOM_ATOM_MAPPING);
+			if (atomsInvolvedInABondCleaved.containsKey(aam1)) {
+				Set<IBond> l = atomsInvolvedInABondCleaved.get(aam1);
+				l.add(bond);
+				atomsInvolvedInABondCleaved.put(aam1, l);
+			}
+			else {
+				Set<IBond> l = new HashSet<IBond>();
+				l.add(bond);
+				atomsInvolvedInABondCleaved.put(aam1, l);
+			}
+			if (atomsInvolvedInABondCleaved.containsKey(aam2)) {
+				Set<IBond> l = atomsInvolvedInABondCleaved.get(aam2);
+				l.add(bond);
+				atomsInvolvedInABondCleaved.put(aam2, l);
+			}
+			else {
+				Set<IBond> l = new HashSet<IBond>();
+				l.add(bond);
+				atomsInvolvedInABondCleaved.put(aam2, l);
+			}
+		}
+		for (IBond bond : bondsFormed) {
+			IAtom a1 = bond.getBegin();
+			int aam1 = a1.getProperty(CDKConstants.ATOM_ATOM_MAPPING);
+			IAtom a2 = bond.getEnd();
+			int aam2 = a2.getProperty(CDKConstants.ATOM_ATOM_MAPPING);
+			if (atomsInvolvedInABondCleaved.containsKey(aam1) && atomsInvolvedInABondCleaved.containsKey(aam2)) {
+				Set<IBond> l1 = atomsInvolvedInABondCleaved.get(aam1);
+				Set<IBond> l2 = atomsInvolvedInABondCleaved.get(aam2);
+				IBond b1 = l1.iterator().next();
+				IBond b2 = l2.iterator().next();
+				//Manage 1 by 1 case
+				/*
+				if (l1.size() == l2.size() && l2.size() == 1)
+					atomsInvolvedInABondCleaved.put(aam1, l1);
+				else
+					continue;
+				*/
+				//TODO  try to solve ambiguous cases
+				if (l1.size() > l2.size() && l2.size() == 1) {
+					l1.remove(b1);
+					atomsInvolvedInABondCleaved.put(aam1, l1);
+				}
+				else if (l1.size() < l2.size() && l1.size() == 1) {
+					l2.remove(b2);
+					atomsInvolvedInABondCleaved.put(aam2, l2);
+				}
+				else {
+					if (l1.size() != l2.size() && l2.size() > 1 && l1.size() > 1) 
+						continue;
+				}
+				IAtom other1 = index.get(getOtherByID(b1, a1).getID());
+				IAtom other2 = index.get(getOtherByID(b2, a2).getID());
+				// Avoid creation of an atom, which has a bond to itself
+				//ex: atom 18 in the following examplecan be mistaken 
+				//[cH:4]1[cH:3][cH:2][c:1]([cH:6][cH:5]1)-[c:7]2[nH:8][c:9]3[CH2:19][CH2:18][c:17]4[cH:16][cH:15][cH:14][cH:13][c:12]4-[c:10]3[n:11]2>>[cH:4]1[cH:3][cH:2][c:1]([cH:6][cH:5]1)-[c:7]2[nH:8][c:9]3[CH2:19][c:17]4[cH:16][cH:15][cH:14][cH:13][c:12]4-[c:10]3[n:11]2
+				if(other1.equals(other2))
+					continue;
+				//System.out.println(atomNotInProducts);
+				//System.out.println(other1.getSymbol()+other1.getProperty(CDKConstants.ATOM_ATOM_MAPPING) + " "+ !atomNotInProducts.contains(other1.getProperty(CDKConstants.ATOM_ATOM_MAPPING)));
+				//System.out.println(other2.getSymbol()+other2.getProperty(CDKConstants.ATOM_ATOM_MAPPING) + " "+ !atomNotInProducts.contains(other2.getProperty(CDKConstants.ATOM_ATOM_MAPPING)));
+				//the correction apply if at least one atom is absent in products (leaving group)
+				if (!atomNotInProducts.contains(other1.getProperty(CDKConstants.ATOM_ATOM_MAPPING)) ||
+						!atomNotInProducts.contains(other2.getProperty(CDKConstants.ATOM_ATOM_MAPPING)))
+					continue;
+				if (aggregateProducts.getBond(other1, other2) != null)
+					continue;
+				if (other1.getFormalCharge() + other2.getFormalCharge() != 0 || 
+						(!other1.getSymbol().equals("C") && !other2.getSymbol().equals("C")))
+					continue;
+				IBond newBond = new Bond();
+				newBond.setAtom(other1, 0);
+				newBond.setAtom(other2, 1);
+				newBond.setOrder(IBond.Order.SINGLE);
+				aggregateProducts.addBond(newBond);
+			}
+		}
+		
+	}
+
+	private IAtom getOtherByID(IBond bond, IAtom atom) {
+		String aam = atom.getID();
+		if (bond.getBegin().getID().equals(aam))
+			return bond.getEnd();
+		else
+			return bond.getBegin();
+	}
+	
+	/**
 	 * set for Atom Expr 
 	 * @param atom
 	 * @return
@@ -1333,7 +1632,9 @@ public class DecodeReactionCode {
 			}
 		}
 		if ((int) atom.getProperty("depth") < maxDepth ) {
-			if (atom.getImplicitHydrogenCount() != null) {
+			//Don't add the implicit hydrogens for aromatic molecules. 
+			//Adding them can failed to match some correct patterns, so the aromatic Expr and other info are enough
+			if (atom.getImplicitHydrogenCount() != null && !atom.isAromatic()) {
 				prop = new Expr(Expr.Type.IMPL_H_COUNT, atom.getImplicitHydrogenCount());
 				expr.and(prop);
 			}
@@ -1348,6 +1649,18 @@ public class DecodeReactionCode {
 		}
 		if (atom.isInRing() == true) {
 			prop = new Expr(Expr.Type.IS_IN_RING);
+			expr.and(prop);
+		}
+		if (atom.getMassNumber() != null) {
+			prop = new Expr(Expr.Type.HAS_ISOTOPE);
+			expr.and(prop);
+			prop = new Expr(Expr.Type.ISOTOPE, atom.getMassNumber());
+			expr.and(prop);
+		}
+		if (atom.getProperty(additionalConstants.RADICAL) != null) {
+			prop = new Expr(Expr.Type.HAS_RADICAL);
+			expr.and(prop);
+			prop = new Expr(Expr.Type.RADICAL, (int)atom.getProperty(additionalConstants.RADICAL));
 			expr.and(prop);
 		}
 		return expr;
@@ -1388,27 +1701,37 @@ public class DecodeReactionCode {
 			case UP_INVERTED:
 				prop = new Expr(Expr.Type.STEREOCHEMISTRY, 0x9a);
 				expr.and(prop);
+				break;
 			case DOWN_INVERTED:
 				prop = new Expr(Expr.Type.STEREOCHEMISTRY, 0x9b);
 				expr.and(prop);
+				break;
 			case E:
 				prop = new Expr(Expr.Type.STEREOCHEMISTRY, 0x9c);
 				expr.and(prop);
+				break;
 			case Z:
 				prop = new Expr(Expr.Type.STEREOCHEMISTRY, 0x9d);
 				expr.and(prop);
+				break;
 			case E_OR_Z:
 				prop = new Expr(Expr.Type.STEREOCHEMISTRY, 0x9e);
 				expr.and(prop);
+				break;
 			case UP_OR_DOWN:
 				prop = new Expr(Expr.Type.STEREOCHEMISTRY, 0x9f);
 				expr.and(prop);
+				break;
 			case UP_OR_DOWN_INVERTED:
 				prop = new Expr(Expr.Type.STEREOCHEMISTRY, 0x8f);
 				expr.and(prop);
+				break;
 			case NONE:
 				prop = new Expr(Expr.Type.STEREOCHEMISTRY, 0x00);
 				expr.and(prop);
+				break;
+			default:
+				break;
 			}
 			}
 		return expr;
@@ -1432,6 +1755,14 @@ public class DecodeReactionCode {
 
 	public List<String> getErrors() {
 		return errors;
+	}
+
+	public void kekulize(boolean kekulize) {
+		this.kekulize = kekulize;
+	}
+	
+	public void setCorrectProducts(boolean correctProducts) {
+		this.correctProducts = correctProducts;
 	}
 
 	public void setAddHydrogenForLastLayer(boolean addHydrogenForLastLayer) {

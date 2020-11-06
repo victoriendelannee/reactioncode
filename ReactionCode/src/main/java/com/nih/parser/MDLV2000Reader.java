@@ -51,6 +51,7 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -466,7 +467,6 @@ public class MDLV2000Reader extends DefaultChemObjectReader {
                         continue;
                     if (idx == 3)
                         carriers[idx++] = focus;
-
                     if (idx == 4) {
                         Stereo winding = parity == 1 ? Stereo.CLOCKWISE : Stereo.ANTI_CLOCKWISE;
                         // H is always at back, even if explicit! At least this seems to be the case.
@@ -952,7 +952,8 @@ public class MDLV2000Reader extends DefaultChemObjectReader {
                         index = readMolfileInt(line, st) - 1;
                         int value = readMolfileInt(line, st + 4);
                         SPIN_MULTIPLICITY multiplicity = SPIN_MULTIPLICITY.ofValue(value);
-
+                        //defined property associated to an atom
+                        container.getAtom(offset + index).setProperty(additionalConstants.RADICAL, multiplicity.getSingleElectrons());
                         for (int e = 0; e < multiplicity.getSingleElectrons(); e++)
                             container.addSingleElectron(offset + index);
                     }
@@ -1967,6 +1968,8 @@ public class MDLV2000Reader extends DefaultChemObjectReader {
                         if (rad > 0) {
                             IAtom radical = container.getAtom(atomNumber - 1);
                             spin = MDLV2000Writer.SPIN_MULTIPLICITY.ofValue(rad);
+                            //defined property associated to an atom
+                            radical.setProperty(additionalConstants.RADICAL, spin.getSingleElectrons());
                             for (int j = 0; j < spin.getSingleElectrons(); j++) {
                                 container.addSingleElectron(container.getBuilder().newInstance(ISingleElectron.class,
                                         radical));

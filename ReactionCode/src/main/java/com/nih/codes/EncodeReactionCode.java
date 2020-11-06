@@ -18,13 +18,14 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.Map.Entry;
 
-import org.openscience.cdk.Bond;
+
 import org.openscience.cdk.CDKConstants;
 import org.openscience.cdk.interfaces.IAtom;
 import org.openscience.cdk.interfaces.IAtomContainer;
 import org.openscience.cdk.interfaces.IAtomContainerSet;
 import org.openscience.cdk.interfaces.IAtomType;
 import org.openscience.cdk.interfaces.IBond;
+import org.openscience.cdk.Bond;
 import org.openscience.cdk.tools.periodictable.PeriodicTable;
 
 import org.openscience.cdk.smsd.helper.BondEnergy;
@@ -52,6 +53,8 @@ public class EncodeReactionCode {
 	
 	private Map<Integer, Set<IAtom>> codeLayers; 
 	private List<IAtom> conflictedAtoms;
+	
+	private Set<Integer> atomInReactionCenterNotInProducts;
 
 	/**
 	 * @param args
@@ -60,7 +63,13 @@ public class EncodeReactionCode {
 		// TODO Auto-generated method stub
 
 	}
+	
 	public EncodeReactionCode() {
+		atomInReactionCenterNotInProducts = new HashSet<Integer>();
+	}
+	
+	public EncodeReactionCode(Set<Integer> atomInReactionCenterNotInProducts) {
+		this.atomInReactionCenterNotInProducts = atomInReactionCenterNotInProducts;
 		//make table of correspondence to connect atom for reaction code generation
 //		connectionTableAlphabet = makeConnectionTableAlphabet();
 	}
@@ -147,7 +156,6 @@ public class EncodeReactionCode {
 	private boolean conflictSolver(IAtomContainer pseudoMol, int depth, int position) {
 		int size = conflictedAtoms.size();
 		if (size > 1) {
-			//System.out.println(" PREVIOUS ");
 			if (depth != 0) {
 				//use previous layer
 				if (previousLayerSolver(position))
@@ -162,22 +170,18 @@ public class EncodeReactionCode {
 					a.setProperty("position", tempPos);
 				}
 			}
-			//System.out.println(" BONDS ");
 			if (connectedBondsSolver())
 				return true;
 			else
 				removeSolvedConflictedAtom();
-			//System.out.println(" CURRENT ");
 			if (currentLayerSolver(position, pseudoMol))
 				return true;
 			else
 				removeSolvedConflictedAtom();
-			//System.out.println(" NEXT ");
 			if (nextLayersSolver(pseudoMol))
 				return true;
 			//Symmetry, it does not matter. The order will not change the position. A position is attributed
 			else {
-				//System.out.println(" SYMMETRY ");
 				removeSolvedConflictedAtom();
 				forceSolvedConflictedAtom();
 			}
@@ -604,16 +608,18 @@ public class EncodeReactionCode {
 		for (Entry<Integer, Set<IAtom>> e : sphereList.entrySet()) {
 			StringBuilder stayingCodes = new StringBuilder();
 			StringBuilder leavingCodes = new StringBuilder();
-			String[] stayingComplementCodes = new String[3];
-			String[] leavingComplementCodes = new String[3];
+			String[] stayingComplementCodes = new String[4];
+			String[] leavingComplementCodes = new String[4];
 			
 			//initialize
 			stayingComplementCodes[0] = "";
 			stayingComplementCodes[1] = "";
 			stayingComplementCodes[2] = "";
+			stayingComplementCodes[3] = "";
 			leavingComplementCodes[0] = "";
 			leavingComplementCodes[1] = "";
 			leavingComplementCodes[2] = "";
+			leavingComplementCodes[3] = "";
 			
 			int depth = e.getKey();
 			List<IAtom> atoms = new ArrayList<IAtom>(e.getValue());
@@ -632,7 +638,10 @@ public class EncodeReactionCode {
 					}
 				}
 				else {
-					positionsOfStayingAtoms.put(atom, positionsOfStayingAtoms.size());
+					int pos = positionsOfStayingAtoms.size();
+					positionsOfStayingAtoms.put(atom, pos);
+					if (atom.getProperty("notInProduct") != null)
+						atomInReactionCenterNotInProducts.add(pos+1);
 				}
 				List<IBond> bonds = mol.getConnectedBondsList(atom);
 				for (IBond b : bonds) {
@@ -706,7 +715,13 @@ public class EncodeReactionCode {
 						String charges = leavingComplementCodes[0];
 						String stereo = leavingComplementCodes[1];
 						String isotopes = leavingComplementCodes[2];
+						String radicals = leavingComplementCodes[3];
 						if (atomComplement.length() > 0) {
+							if (atomComplement.contains("~")) {
+								int indexSymbol = atomComplement.indexOf("~");
+								radicals += String.format("%02d", cptStaying) + atomComplement.substring(indexSymbol+1, indexSymbol+3);
+								atomComplement = atomComplement.replace(atomComplement.substring(indexSymbol, indexSymbol+3),"");
+							}
 							if (atomComplement.contains("#")) {
 								int indexSymbol = atomComplement.indexOf("#");
 								isotopes += String.format("%02d", cptStaying) + atomComplement.substring(indexSymbol+1, indexSymbol+3);
@@ -743,6 +758,7 @@ public class EncodeReactionCode {
 						leavingComplementCodes[0] = charges;
 						leavingComplementCodes[1] = stereo;
 						leavingComplementCodes[2] = isotopes;
+						leavingComplementCodes[3] = radicals;
 						//increment with the number of bonds (corresponds to the position of the next atom)
 						cptLeaving = cptLeaving + cptBond;
 					}
@@ -753,7 +769,13 @@ public class EncodeReactionCode {
 						String charges = stayingComplementCodes[0];
 						String stereo = stayingComplementCodes[1];
 						String isotopes = stayingComplementCodes[2];
+						String radicals = stayingComplementCodes[3];
 						if (atomComplement.length() > 0) {
+							if (atomComplement.contains("~")) {
+								int indexSymbol = atomComplement.indexOf("~");
+								radicals += String.format("%02d", cptStaying) + atomComplement.substring(indexSymbol+1, indexSymbol+3);
+								atomComplement = atomComplement.replace(atomComplement.substring(indexSymbol, indexSymbol+3),"");
+							}
 							if (atomComplement.contains("#")) {
 								int indexSymbol = atomComplement.indexOf("#");
 								isotopes += String.format("%02d", cptStaying) + atomComplement.substring(indexSymbol+1, indexSymbol+3);
@@ -790,6 +812,7 @@ public class EncodeReactionCode {
 						stayingComplementCodes[0] = charges;
 						stayingComplementCodes[1] = stereo;
 						stayingComplementCodes[2] = isotopes;
+						stayingComplementCodes[3] = radicals;
 						//increment with the number of bonds (corresponds to the position of the next atom)
 						cptStaying = cptStaying + cptBond;
 					}
@@ -801,7 +824,13 @@ public class EncodeReactionCode {
 					String charges = stayingComplementCodes[0];
 					String stereo = stayingComplementCodes[1];
 					String isotopes = stayingComplementCodes[2];
+					String radicals = stayingComplementCodes[3];
 					if (atomComplement.length() > 0) {
+						if (atomComplement.contains("~")) {
+							int indexSymbol = atomComplement.indexOf("~");
+							radicals += String.format("%02d", cptStaying) + atomComplement.substring(indexSymbol+1, indexSymbol+3);
+							atomComplement = atomComplement.replace(atomComplement.substring(indexSymbol, indexSymbol+3),"");
+						}
 						if (atomComplement.contains("#")) {
 							int indexSymbol = atomComplement.indexOf("#");
 							isotopes += String.format("%02d", cptStaying) + atomComplement.substring(indexSymbol+1, indexSymbol+3);
@@ -839,6 +868,7 @@ public class EncodeReactionCode {
 					stayingComplementCodes[0] = charges;
 					stayingComplementCodes[1] = stereo;
 					stayingComplementCodes[2] = isotopes;
+					stayingComplementCodes[3] = radicals;
 					//increment with the number of bonds (corresponds to the position of the next atom)
 					cptStaying = cptStaying + cptBond;
 				}
@@ -853,6 +883,9 @@ public class EncodeReactionCode {
 				if (stayingComplementCodes[2].length() > 0) {
 					stayingCodes.append("/i"+stayingComplementCodes[2]);
 				}
+				if (stayingComplementCodes[3].length() > 0) {
+					stayingCodes.append("/r"+stayingComplementCodes[3]);
+				}
 				tempResult.put(depth, stayingCodes.toString());
 			}
 			if (leavingCodes.length() > 0) {
@@ -864,6 +897,9 @@ public class EncodeReactionCode {
 				}
 				if (leavingComplementCodes[2].length() > 0) {
 					leavingCodes.append("/i"+leavingComplementCodes[2]);
+				}
+				if (leavingComplementCodes[3].length() > 0) {
+					leavingCodes.append("/r"+leavingComplementCodes[3]);
 				}
 				tempResult.put(leavingIndicator+depth, leavingCodes.toString());
 
@@ -882,7 +918,6 @@ public class EncodeReactionCode {
 				result.put(Character.toString((char) (64+newDepth)), e.getValue());
 			}
 		}
-		
 		return result;
 	}
 	
@@ -896,6 +931,8 @@ public class EncodeReactionCode {
 
 		for (int i = 0; i < acSet.getAtomContainerCount(); i ++) {
 			IAtomContainer ac = acSet.getAtomContainer(i);
+			if ((boolean)ac.getProperty(additionalConstants.SPECTATOR) == true)
+				continue;
 			for (int j = 0; j < ac.getAtomCount(); j++) {
 				result.put(ac.getAtom(j).getID(), ac.getAtom(j));
 			}
@@ -929,7 +966,6 @@ public class EncodeReactionCode {
 		StringBuilder code = new StringBuilder();
 		String bScore = Integer.toHexString(getRCScore(bonds));
 		code.append(bScore);
-		
 		IAtom atomInReactant = indexAtomReactants.get(atomInProduct.getProperty(ATOM_ATOM_MAPPING)+"");
 		
 		if (hybridization == true) {
@@ -955,12 +991,12 @@ public class EncodeReactionCode {
 			String chargeInReactant = "";
 			String chargeInProduct = "";
 			if (atomInReactant != null) {
-				chargeInReactant = encodeChargeAndIsotope(atomInReactant.getFormalCharge());
-				chargeInProduct = encodeChargeAndIsotope(atomInProduct.getFormalCharge());
+				chargeInReactant = encodeChargeRadicalAndIsotope(atomInReactant.getFormalCharge());
+				chargeInProduct = encodeChargeRadicalAndIsotope(atomInProduct.getFormalCharge());
 			}
 			else {
 				chargeInReactant = "0";
-				chargeInProduct = encodeChargeAndIsotope(atomInProduct.getFormalCharge());
+				chargeInProduct = encodeChargeRadicalAndIsotope(atomInProduct.getFormalCharge());
 			}
 			if (!chargeInReactant.equals("0") || !chargeInProduct.equals("0")) {
 				code.append(chargeInReactant);
@@ -978,20 +1014,36 @@ public class EncodeReactionCode {
 			
 		}
 		
+		String radicalInReactant = "0";
+		String radicalInProduct = "0";
+		if (atomInProduct.getProperty(additionalConstants.RADICAL) != null) {
+			int radical = atomInProduct.getProperty(additionalConstants.RADICAL);
+			radicalInProduct = encodeChargeRadicalAndIsotope(radical);
+		}
+		if (atomInReactant.getProperty(additionalConstants.RADICAL) != null) {
+			int radical = atomInReactant.getProperty(additionalConstants.RADICAL);
+			radicalInReactant = encodeChargeRadicalAndIsotope(radical);
+		}
+		if (!radicalInReactant.equals("0") || !radicalInProduct.equals("0")) {
+			code.append("~");
+			code.append(radicalInReactant);
+			code.append(radicalInProduct);
+		}
+		
 		String isotopeInReactant = "0";
 		String isotopeInProduct = "0";
 		if (atomInProduct.getMassNumber() != null && !atomInProduct.getSymbol().equals("H")) {
 			int frequentMass = ElementCalculation.calculateMass(atomInProduct.getSymbol());
 			if (frequentMass != atomInProduct.getMassNumber()) {
 				int delta = atomInProduct.getMassNumber() - frequentMass;
-				isotopeInProduct = encodeChargeAndIsotope(delta);
+				isotopeInProduct = encodeChargeRadicalAndIsotope(delta);
 			}
 		}
 		if (atomInReactant.getMassNumber() != null && !atomInReactant.getSymbol().equals("H")) {
 			int frequentMass = ElementCalculation.calculateMass(atomInReactant.getSymbol());
 			if (frequentMass != atomInReactant.getMassNumber()) {
 				int delta = atomInReactant.getMassNumber() - frequentMass;
-				isotopeInReactant = encodeChargeAndIsotope(delta);
+				isotopeInReactant = encodeChargeRadicalAndIsotope(delta);
 			}
 		}
 		if (!isotopeInReactant.equals("0") || !isotopeInReactant.equals("0")) {
@@ -1018,7 +1070,7 @@ public class EncodeReactionCode {
 		IBond inReactant = indexBondReactants.get(inProduct.getID());
 		
 		if (inProduct.getProperty(additionalConstants.BOND_CHANGE_INFORMATION) != null) {
-			if ((int) inProduct.getProperty(additionalConstants.BOND_CHANGE_INFORMATION) == additionalConstants.BOND_FORMED) {
+			if ((int) inProduct.getProperty(additionalConstants.BOND_CHANGE_INFORMATION) == additionalConstants.BOND_MADE) {
 				inReactant = new Bond();
 				inReactant.setIsAromatic(false);
 				inReactant.setProperty("ignore", true);
@@ -1134,7 +1186,7 @@ public class EncodeReactionCode {
 	 * @param chargeOrMass
 	 * @return
 	 */
-	private String encodeChargeAndIsotope(int chargeOrMass) {
+	private String encodeChargeRadicalAndIsotope(int chargeOrMass) {
 		String chargeEncoded = "0";
 		if (chargeOrMass == -17) {
 			chargeEncoded = "1";
@@ -1476,7 +1528,7 @@ public class EncodeReactionCode {
 				score += 1;
 				if ((int) bond.getProperty(BOND_CHANGE_INFORMATION) == additionalConstants.BOND_CLEAVED) 
 					score += 6;
-				if ((int) bond.getProperty(BOND_CHANGE_INFORMATION) == additionalConstants.BOND_FORMED) 
+				if ((int) bond.getProperty(BOND_CHANGE_INFORMATION) == additionalConstants.BOND_MADE) 
 					score += 8;
 				if ((int) bond.getProperty(BOND_CHANGE_INFORMATION) == additionalConstants.BOND_ORDER) 
 					score += 4;
@@ -1609,6 +1661,14 @@ public class EncodeReactionCode {
 	public void setRepetition(boolean repetition) {
 		this.repetition = repetition;
 	}
+	
+	/**
+	 * @return
+	 */
+	public Set<Integer> getAtomInReactionCenterNotInProducts() {
+		return atomInReactionCenterNotInProducts;
+	}
+	
 }
 
 

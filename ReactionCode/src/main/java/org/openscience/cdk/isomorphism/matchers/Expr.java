@@ -27,6 +27,8 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.cache.Weigher;
+import com.nih.reaction.additionalConstants;
+
 import org.openscience.cdk.CDKConstants;
 import org.openscience.cdk.ReactionRole;
 import org.openscience.cdk.config.Elements;
@@ -259,6 +261,10 @@ public final class Expr {
                 return atom.getMassNumber() != null;
             case HAS_UNSPEC_ISOTOPE:
                 return atom.getMassNumber() == null;
+            case HAS_RADICAL:
+                return atom.getProperty(additionalConstants.RADICAL) != null;
+            case HAS_UNSPEC_RADICAL:
+                return atom.getProperty(additionalConstants.RADICAL) == null;
             case UNSATURATED:
                 for (IBond bond : atom.bonds())
                     if (bond.getOrder() == IBond.Order.DOUBLE)
@@ -298,6 +304,8 @@ public final class Expr {
                 return v == value;
             case ISOTOPE:
                 return eq(atom.getMassNumber(), value);
+            case RADICAL:
+                return eq(atom.getProperty(additionalConstants.RADICAL), value);
             case FORMAL_CHARGE:
                 return eq(atom.getFormalCharge(), value);
             case RING_BOND_COUNT:
@@ -317,7 +325,7 @@ public final class Expr {
             case RING_SIZE:
                 return atom.isInRing() && isInRingSize(atom, value);
             // HAS_HETERO_SUBSTITUENT added by Victorien 
-	    case HAS_ALIPHATIC_HETERO_SUBSTITUENT:
+            case HAS_ALIPHATIC_HETERO_SUBSTITUENT:
                 if (atom.getBondCount() < value)
                     return false;
                 int q1 = 0;
@@ -563,6 +571,12 @@ public final class Expr {
                 break;
             case HAS_UNSPEC_ISOTOPE:
                 type = Type.HAS_ISOTOPE;
+                break;
+            case HAS_RADICAL:
+                type = Type.HAS_UNSPEC_RADICAL;
+                break;
+            case HAS_UNSPEC_RADICAL:
+                type = Type.HAS_RADICAL;
                 break;
             case IS_AROMATIC:
                 type = Type.IS_ALIPHATIC;
@@ -905,6 +919,11 @@ public final class Expr {
         /** True if the atom mass ({@link IAtom#getMassNumber()}) is null
          *  (unspecified). */
         HAS_UNSPEC_ISOTOPE,
+        /** True if the radical property ({@link IAtom#getProperty(additionalConstants.RADICAL)}) is non-null. */
+        HAS_RADICAL,
+        /** True if the radical property ({@link IAtom#getProperty(additionalConstants.RADICAL)}) is null. 
+         *  (unspecified). */
+        HAS_UNSPEC_RADICAL,
         /** True if the atom is adjacent to a hetero atom. */
         HAS_HETERO_SUBSTITUENT,
         /** True if the atom is adjacent to an aliphatic hetero atom. */
@@ -958,6 +977,9 @@ public final class Expr {
         /** True if the mass ({@link IAtom#getMassNumber()}) of an atom equals the
          *  specified 'value'. */
         ISOTOPE,
+        /** True if the electrons ({@link IAtom#getProperty(additionalConstants.RADICAL)}) of an atom equals the
+         *  specified 'value'. */
+        RADICAL,
         /** True if the formal charge ({@link IAtom#getFormalCharge()}) of an atom
          *  equals the specified 'value'. */
         FORMAL_CHARGE,
@@ -1050,6 +1072,8 @@ public final class Expr {
                 case HAS_IMPLICIT_HYDROGEN:
                 case HAS_ISOTOPE:
                 case HAS_UNSPEC_ISOTOPE:
+                case HAS_RADICAL:
+                case HAS_UNSPEC_RADICAL:
                 case HAS_ALIPHATIC_HETERO_SUBSTITUENT:
                 case HAS_HETERO_SUBSTITUENT:
                 case UNSATURATED:

@@ -125,6 +125,7 @@ public class Main {
 		boolean charge = true; 
 		boolean hybridization = false; 
 		boolean repetition = true; 
+		boolean radicalize = false;
 		boolean stereochemistry = true; 
 		
 		List<String> headers = new ArrayList<String>();
@@ -170,6 +171,9 @@ public class Main {
 		}
 		if (commands.hasOption('r')) {
 			repetition = false; 
+		}
+		if (commands.hasOption('z')) {
+			radicalize = true; 
 		}
 		if (commands.hasOption('s')) {
 			writeSDF = true;
@@ -243,7 +247,9 @@ public class Main {
 		else if (format.equals("SMIRKS_FILE")) {
 			System.out.println(ColouredSystemOutPrintln.ANSI_PURPLE + "Fromat detected: SMIRKS" 
 					+ ColouredSystemOutPrintln.ANSI_RESET);
-			reactions = parser.parseReactionSMILES(reactionFile, 0, true, false);
+			parser.kekulize(false);
+			parser.radicalize(radicalize);
+			reactions = parser.parseReactionSMILES(reactionFile, 0, true);
 			files = parser.getFiles();
 			//add a null file which correspond to the reactionSet returned by parseRDF (all other reactions are 
 			//written in a temp file
@@ -252,7 +258,9 @@ public class Main {
 		else if (format.equals("SMIRKS_TEXT")) {
 			System.out.println(ColouredSystemOutPrintln.ANSI_PURPLE + "Fromat detected: SMIRKS" 
 					+ ColouredSystemOutPrintln.ANSI_RESET);
-			reactions = parser.parseReactionSMILES(reactionFile, false);
+			parser.kekulize(false);
+			parser.radicalize(radicalize);
+			reactions = parser.parseReactionSMILES(reactionFile);
 			//add a null file which correspond to the reactionSet returned by parseRDF (all other reactions are 
 			//written in a temp file
 			files.add(0, null);
@@ -295,12 +303,14 @@ public class Main {
 				try {
 					//aromaticity perceived when RDF is read
 					for (IAtomContainer ac : reactants.atomContainers()) {
-						//tools.perceiveAromaticityAndflagAtomsAndBonds(ac);
+						if (format.equals("RXN_FILE") || format.equals("RDF_FILE"))
+							tools.perceiveAromaticityAndflagAtomsAndBonds(ac);
 						tools.attributeIDtoAtomsAndBonds(ac);
 					}
 
 					for (IAtomContainer ac : products.atomContainers()) {
-						//tools.perceiveAromaticityAndflagAtomsAndBonds(ac);
+						if (format.equals("RXN_FILE") || format.equals("RDF_FILE"))
+							tools.perceiveAromaticityAndflagAtomsAndBonds(ac);
 						tools.attributeIDtoAtomsAndBonds(ac);
 					}
 				}
@@ -572,8 +582,8 @@ public class Main {
 		if (new File(outputDirectory + prefix + "_reactionSMILES.txt").exists()) {
 			removeFile(outputDirectory + prefix + "_reactionSMILES.txt");
 		}
-		if (new File(outputDirectory + prefix + "_reactionSMILESAndMapping.txt").exists()) {
-			removeFile(outputDirectory + prefix + "_reactionSMILESAndMapping.txt");
+		if (new File(outputDirectory + prefix + "_SMIRKS.txt").exists()) {
+			removeFile(outputDirectory + prefix + "_SMIRKS.txt");
 		}
 
 		//parse reactions
@@ -653,7 +663,7 @@ public class Main {
 					}
 					if (writeSMIRKSWMapping) {
 						try {
-							dataFile(id + "\t" + tools.makeSmiles(reaction, true) + "\n", outputDirectory + prefix + "_reactionSMILESAndMapping.txt");
+							dataFile(id + "\t" + tools.makeSmiles(reaction, true) + "\n", outputDirectory + prefix + "_SMIRKS.txt");
 						}
 						catch (Exception e) {
 							e.printStackTrace();
@@ -662,14 +672,16 @@ public class Main {
 					}
 					if (makeImage) {
 						try {
+							//Convert IQueryAtomContainer to AtomContainer
+							IReaction newReaction = tools.convertReactionContainingIQueryAtomContainer(reaction);
 							//force delocalised in order to mark aromatic as dash bond (even if the ring is not complete)
-							new org.openscience.cdk.depict.DepictionGenerator().withParam(StandardGenerator.ForceDelocalisedBondDisplay.class, true)
-							.withHighlight(reaction.getProperty("bondsFormed"), Color.BLUE)
-							.withHighlight(reaction.getProperty("bondsCleaved"), Color.RED)
-							.withHighlight(reaction.getProperty("bondsOrder"), Color.GREEN)
-							.withHighlight(reaction.getProperty("reactionCenter"), Color.LIGHT_GRAY)
+							new org.openscience.cdk.depict.DepictionGenerator()
+							.withHighlight(newReaction.getProperty("bondsFormed"), Color.BLUE)
+							.withHighlight(newReaction.getProperty("bondsCleaved"), Color.RED)
+							.withHighlight(newReaction.getProperty("bondsOrder"), Color.GREEN)
+							.withHighlight(newReaction.getProperty("reactionCenter"), Color.LIGHT_GRAY)
 							.withOuterGlowHighlight().withAtomColors().withAtomMapNumbers()
-							.depict(reaction).writeTo(outputDirectory + "/IMG_ReactionDecoded/reaction_" + reaction.getID() + ".pdf");
+							.depict(newReaction).writeTo(outputDirectory + "/IMG_ReactionDecoded/reaction_" + reaction.getID() + ".pdf");
 						}
 						catch (Exception e) {
 							e.printStackTrace();
@@ -791,6 +803,8 @@ public class Main {
 		
 		errorsFileName = outputDirectory + prefix + "_ReactionCodeTransformer_errors.txt";
 		removeFile(errorsFileName);
+		
+		
 
 		//create directories
 		if (writeRXN) {
@@ -810,8 +824,14 @@ public class Main {
 		if (new File(outputDirectory + prefix + "_reactionSMILES.txt").exists()) {
 			removeFile(outputDirectory + prefix + "_reactionSMILES.txt");
 		}
-		if (new File(outputDirectory + prefix + "_reactionSMILESAndMapping.txt").exists()) {
-			removeFile(outputDirectory + prefix + "_reactionSMILESAndMapping.txt");
+		if (new File(outputDirectory + prefix + "_SMIRKS.txt").exists()) {
+			removeFile(outputDirectory + prefix + "_SMIRKS.txt");
+		}
+		if (new File(outputDirectory + prefix + "_reactionSMILES_1.txt").exists()) {
+			removeFile(outputDirectory + prefix + "_reactionSMILES_1.txt");
+		}
+		if (new File(outputDirectory + prefix + "_SMIRKS_1.txt").exists()) {
+			removeFile(outputDirectory + prefix + "_SMIRKS_1.txt");
 		}
 		
 		//parse reactions
@@ -1029,7 +1049,7 @@ public class Main {
 							smiles = "no or too many possible products";
 						}
 						try {
-							dataFile(id-1 + "\t" + smiles + "\n", outputDirectory + prefix + "_reactionSMILESAndMapping_" + filecpt + ".txt");
+							dataFile(id-1 + "\t" + smiles + "\n", outputDirectory + prefix + "_SMIRKS_" + filecpt + ".txt");
 						}
 						catch (Exception e) {
 							e.printStackTrace();
@@ -1077,6 +1097,12 @@ public class Main {
 					reactions.removeAllReactions();
 					cpt = 1;
 					filecpt++;
+					if (new File(outputDirectory + prefix + "_reactionSMILES_" + filecpt + ".txt").exists()) {
+						removeFile(outputDirectory + prefix + "_reactionSMILES_" + filecpt + ".txt");
+					}
+					if (new File(outputDirectory + prefix + "_SMIRKS_" + filecpt + ".txt").exists()) {
+						removeFile(outputDirectory + prefix + "_SMIRKS_" + filecpt + ".txt");
+					}
 				}
 			}
 		//}

@@ -8,7 +8,7 @@ import org.openscience.cdk.exception.CDKException;
 import org.openscience.cdk.interfaces.IAtomContainer;
 import org.openscience.cdk.interfaces.IAtomContainerSet;
 import org.openscience.cdk.interfaces.IReaction;
-import org.openscience.cdk.silent.SilentChemObjectBuilder;
+import org.openscience.cdk.DefaultChemObjectBuilder;
 
 import com.nih.tools.tools;
 
@@ -87,7 +87,7 @@ public class ChemicalFormatWriter {
 	 * @throws CDKException 
 	 */
 	public String writeSMARTS(IAtomContainerSet set) throws CDKException {
-    	IAtomContainer aggregate = SilentChemObjectBuilder.getInstance().newAtomContainer();
+    	IAtomContainer aggregate = DefaultChemObjectBuilder.getInstance().newAtomContainer();
 
     	for (IAtomContainer ac : set.atomContainers()) {
     		aggregate.add(ac);
@@ -112,7 +112,7 @@ public class ChemicalFormatWriter {
 	 * @throws CDKException 
 	 */
 	public String writeSMILES(IAtomContainerSet set) throws CDKException {
-    	IAtomContainer aggregate = SilentChemObjectBuilder.getInstance().newAtomContainer();
+    	IAtomContainer aggregate = DefaultChemObjectBuilder.getInstance().newAtomContainer();
 
     	for (IAtomContainer ac : set.atomContainers()) {
     		aggregate.add(ac);

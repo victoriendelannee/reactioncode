@@ -26,6 +26,8 @@ package org.openscience.cdk.smiles2;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
+import com.nih.tools.tools;
+
 import org.openscience.cdk.CDKConstants;
 import org.openscience.cdk.aromaticity.Aromaticity;
 import org.openscience.cdk.aromaticity.ElectronDonation;
@@ -157,6 +159,14 @@ public final class SmilesParser2 {
      * underlying Beam library (soon to be added to CDK).
      */
     private boolean                  kekulise = true;
+    
+    /**
+     * Radicals are not a standard properties of SMILES and SMIRKS. SMIRKS
+     * representing a reaction can contains Hydrogen. In that case, it can be 
+     * interesting to deduced the radical by checking the valence. The radical
+     * is calculated using radical = valence - (bondOrderSum - charge + hcount)
+     */
+    private boolean 				 radicalize = false;
 
     /**
      * Create a new SMILES parser which will create {@link IAtomContainer}s with
@@ -199,7 +209,10 @@ public final class SmilesParser2 {
             IAtomContainer reactantContainer = parseSmiles(reactants, true);
             IAtomContainerSet reactantSet = ConnectivityChecker.partitionIntoMolecules(reactantContainer);
             for (int i = 0; i < reactantSet.getAtomContainerCount(); i++) {
-                reaction.addReactant(reactantSet.getAtomContainer(i));
+            	IAtomContainer reactant = reactantSet.getAtomContainer(i);
+            	if (radicalize)
+            		tools.radicalize(reactant, true);
+                reaction.addReactant(reactant);
             }
         }
 
@@ -208,7 +221,10 @@ public final class SmilesParser2 {
             IAtomContainer agentContainer = parseSmiles(agents, true);
             IAtomContainerSet agentSet = ConnectivityChecker.partitionIntoMolecules(agentContainer);
             for (int i = 0; i < agentSet.getAtomContainerCount(); i++) {
-                reaction.addAgent(agentSet.getAtomContainer(i));
+            	IAtomContainer agent = agentSet.getAtomContainer(i);
+            	if (radicalize)
+            		tools.radicalize(agent, true);
+                reaction.addAgent(agent);
             }
         }
 
@@ -219,7 +235,10 @@ public final class SmilesParser2 {
             IAtomContainer productContainer = parseSmiles(products, true);
             IAtomContainerSet productSet = ConnectivityChecker.partitionIntoMolecules(productContainer);
             for (int i = 0; i < productSet.getAtomContainerCount(); i++) {
-                reaction.addProduct(productSet.getAtomContainer(i));
+            	IAtomContainer product = productSet.getAtomContainer(i);
+            	if (radicalize)
+            		tools.radicalize(product, true);
+                reaction.addProduct(product);
             }
             reaction.setProperty(CDKConstants.TITLE, title = productContainer.getProperty(CDKConstants.TITLE));
         }
@@ -702,4 +721,10 @@ public final class SmilesParser2 {
     public void kekulise(boolean kekulise) {
         this.kekulise = kekulise;
     }
+
+	public void radicalize(boolean radicalize) {
+		this.radicalize = radicalize;
+	}
+    
+    
 }

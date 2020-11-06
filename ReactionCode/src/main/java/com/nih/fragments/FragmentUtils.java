@@ -32,6 +32,7 @@ import org.openscience.cdk.interfaces.IAtomContainerSet;
 import org.openscience.cdk.interfaces.IBond;
 import org.openscience.cdk.interfaces.IChemObject;
 import org.openscience.cdk.interfaces.IStereoElement;
+import org.openscience.cdk.isomorphism.matchers.QueryAtomContainer;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -287,11 +288,14 @@ public class FragmentUtils {
 		for (IStereoElement se : ac.stereoElements()) {
 			seMap.put(se.getFocus(), se);
 		}
-		ac.stereoElements();
 		
 		for (IAtom a : ac.atoms()) {
 			if (!a.getFlag(CDKConstants.VISITED)) {
-				IAtomContainer partContainer = a.getBuilder().newInstance(IAtomContainer.class);
+				IAtomContainer partContainer;
+				if (ac instanceof QueryAtomContainer)
+					partContainer = new QueryAtomContainer(DefaultChemObjectBuilder.getInstance());
+				else
+					partContainer = a.getBuilder().newInstance(IAtomContainer.class);
 				partContainer.addAtom(a);
 				a.setFlag(CDKConstants.VISITED, true);
 
@@ -300,8 +304,7 @@ public class FragmentUtils {
 				makeAtomContainer(sphere, ac, partContainer);
 				
 				if (!seMap.isEmpty())
-					ac.setStereoElements(getStereoElement(partContainer, seMap));
-				
+					partContainer.setStereoElements(getStereoElement(partContainer, seMap));
 				set.addAtomContainer(partContainer);
 				
 			}
